@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/BattleHub.ProfileService.Api/BattleHub.ProfileService.Api.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/BattleHub.ProfileService.IntegrationTests/BattleHub.ProfileService.IntegrationTests.csproj" />
+    <Project Path="tests/BattleHub.ProfileService.UnitTests/BattleHub.ProfileService.UnitTests.csproj" />
+  </Folder>
+</Solution>

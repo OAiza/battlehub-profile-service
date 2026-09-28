@@ -1,0 +1,10 @@
+@BattleHub.ProfileService.Api_HostAddress = http://localhost:5220
+
+GET {{BattleHub.ProfileService.Api_HostAddress}}/health
+
+###
+
+GET {{BattleHub.ProfileService.Api_HostAddress}}/openapi/v1.json
+Accept: application/json
+
+###
