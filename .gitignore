@@ -1,0 +1,50 @@
+# .gitignore de battlehub-profile-service
+# Basado en helpers/gitignore-template.txt de battlehub-contracts,
+# adaptado al stack del servicio (.NET 10 + MySQL).
+
+# ===== General / SO =====
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.swp
+
+# ===== Variables de entorno / secretos =====
+.env
+.env.*
+!.env.example
+appsettings.Development.json
+appsettings.Local.json
+*.pfx
+*.pem
+
+# ===== IDEs / Editores =====
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.userprefs
+
+# ===== .NET =====
+bin/
+obj/
+*.dll
+*.pdb
+*.nupkg
+*.snupkg
+.nuget/
+publish/
+artifacts/
+
+# ===== Bases de datos locales =====
+*.sqlite
+*.sqlite3
+*.db
+
+# ===== Artefactos de pruebas/CI =====
+TestResults/
+*.trx
+coverage/
+*.coverage
+*.coveragexml
