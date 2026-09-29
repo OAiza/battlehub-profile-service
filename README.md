@@ -29,20 +29,41 @@ Todas las fechas se manejan en UTC, formato ISO-8601 con sufijo `Z` (ejemplo: `2
 ## Estructura del repositorio
 
 ```text
-/src                → código fuente
-/tests              → pruebas unitarias e integración
-/.github/workflows  → pipeline de CI/CD
+BattleHub.ProfileService.slnx                → solución
+global.json                                  → versión del SDK de .NET (10)
+/src/BattleHub.ProfileService.Api            → API REST (ASP.NET Core)
+/tests/BattleHub.ProfileService.UnitTests    → pruebas unitarias (Category=Unit)
+/tests/BattleHub.ProfileService.IntegrationTests → pruebas de integración (Category=Integration)
+/.github/workflows                           → pipeline de CI/CD
 ```
 
 ## Cómo correrlo localmente
 
-> Pendiente: se completará cuando exista la solución de .NET.
-
 Requisitos previos:
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
-- MySQL (local o en contenedor con Docker)
-- Acceso al tenant de Auth0 del proyecto
+- MySQL (local o en contenedor con Docker), cuando se agregue la persistencia
+- Acceso al tenant de Auth0 del proyecto, cuando se agregue la autenticación
+
+Compilar y ejecutar la API:
+
+```bash
+dotnet restore
+dotnet build
+dotnet run --project src/BattleHub.ProfileService.Api
+```
+
+La API queda en `http://localhost:5220` (puerto provisional hasta que se acuerden los puertos del proyecto). Endpoints disponibles:
+
+- `GET /health` → estado del servicio
+- `GET /openapi/v1.json` → documento OpenAPI (solo en entorno Development)
+
+Ejecutar las pruebas:
+
+```bash
+dotnet test --filter Category=Unit
+dotnet test --filter Category=Integration
+```
 
 Los secretos (cadena de conexión, dominio y audience de Auth0) no se versionan. Se configuran con `dotnet user-secrets` o variables de entorno.
 
