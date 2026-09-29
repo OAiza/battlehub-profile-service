@@ -1,4 +1,6 @@
+using BattleHub.ProfileService.Api.Data;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 
@@ -35,6 +37,14 @@ builder.Services.AddOpenApi(options =>
 builder.Services.AddProblemDetails();
 
 builder.Services.AddHealthChecks();
+
+// Persistencia: MySQL vía EF Core. La cadena de conexión no se versiona: va en user-secrets
+// (dotnet user-secrets set "ConnectionStrings:ProfileDb" "...") o en variables de entorno.
+var connectionString = builder.Configuration.GetConnectionString("ProfileDb")
+    ?? throw new InvalidOperationException(
+        "Falta la cadena de conexión 'ConnectionStrings:ProfileDb'.");
+
+builder.Services.AddDbContext<ProfileDbContext>(options => options.UseMySQL(connectionString));
 
 // Configuración de Autenticación JWT Bearer con Auth0
 var auth0Domain = builder.Configuration["Auth0:Domain"] ?? "auth.battlehub.local";
