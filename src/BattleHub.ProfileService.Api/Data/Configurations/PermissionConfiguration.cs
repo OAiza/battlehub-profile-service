@@ -27,5 +27,7 @@ public class PermissionConfiguration : IEntityTypeConfiguration<Permission>
 
         builder.HasIndex(permission => permission.GrantedByDefault)
             .HasDatabaseName("ix_permissions_granted_by_default");
+
+        builder.HasData(SeedData.Permissions);
     }
 }

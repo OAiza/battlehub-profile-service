@@ -41,5 +41,7 @@ public class GameConfiguration : IEntityTypeConfiguration<Game>
             .HasForeignKey(game => game.RequiredPermissionCode)
             .HasConstraintName("fk_games_required_permission")
             .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasData(SeedData.Games);
     }
 }
