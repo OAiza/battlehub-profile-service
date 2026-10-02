@@ -9,6 +9,7 @@ using Microsoft.OpenApi;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
+builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy.WithOrigins(builder.Configuration.GetSection("Cors:Origins").Get<string[]>() ?? ["http://localhost:4000"]).AllowAnyHeader().AllowAnyMethod()));
 
 // Configuración de Auth0
 builder.Services.Configure<Auth0Options>(builder.Configuration.GetSection(Auth0Options.SectionName));
@@ -93,6 +94,12 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
+if (!useMySql)
+{
+    using var scope = app.Services.CreateScope();
+    await scope.ServiceProvider.GetRequiredService<ProfileDbContext>().Database.EnsureCreatedAsync();
+}
+
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 
@@ -102,6 +109,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+app.UseCors();
 
 // Orden estricto de middlewares: Autenticación antes de Autorización
 app.UseAuthentication();

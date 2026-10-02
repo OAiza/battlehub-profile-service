@@ -2,7 +2,6 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
-using BattleHub.ProfileService.Api.Data;
 using BattleHub.ProfileService.Api.Dtos;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -88,10 +87,6 @@ public class ProfileEndpointTests : IClassFixture<WebApplicationFactory<Program>
             });
         });
 
-        // Aseguramos que la base en memoria cree las tablas y aplique el seed inicial
-        using var scope = _factory.Services.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<ProfileDbContext>();
-        context.Database.EnsureCreated();
     }
 
     [Fact]
@@ -202,5 +197,25 @@ public class ProfileEndpointTests : IClassFixture<WebApplicationFactory<Program>
         Assert.Contains(games, g => g.GameType == "trivia");
         Assert.Contains(games, g => g.GameType == "memory");
     }
-}
 
+    [Fact]
+    public async Task Preflight_PermiteShellYRechazaOrigenAjeno()
+    {
+        var client = _factory.CreateClient();
+
+        var permitido = new HttpRequestMessage(HttpMethod.Options, "/api/profiles/sync");
+        permitido.Headers.Add("Origin", "http://localhost:4000");
+        permitido.Headers.Add("Access-Control-Request-Method", "POST");
+        var respuestaPermitida = await client.SendAsync(permitido);
+
+        Assert.True(respuestaPermitida.Headers.TryGetValues("Access-Control-Allow-Origin", out var origenes));
+        Assert.Equal("http://localhost:4000", Assert.Single(origenes));
+
+        var ajeno = new HttpRequestMessage(HttpMethod.Options, "/api/profiles/sync");
+        ajeno.Headers.Add("Origin", "https://untrusted.example");
+        ajeno.Headers.Add("Access-Control-Request-Method", "POST");
+        var respuestaAjena = await client.SendAsync(ajeno);
+
+        Assert.False(respuestaAjena.Headers.Contains("Access-Control-Allow-Origin"));
+    }
+}
