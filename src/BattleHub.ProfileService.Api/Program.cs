@@ -1,10 +1,38 @@
+using BattleHub.ProfileService.Api.Configuration;
+using BattleHub.ProfileService.Api.Data;
+using BattleHub.ProfileService.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
+
+// Configuración de Auth0
+builder.Services.Configure<Auth0Options>(builder.Configuration.GetSection(Auth0Options.SectionName));
+
+// Configuración de persistencia con EF Core
+var dbProvider = builder.Configuration["DatabaseProvider"];
+bool useMySql = string.Equals(dbProvider, "MySQL", StringComparison.OrdinalIgnoreCase) || EF.IsDesignTime;
+
+if (useMySql)
+{
+    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+        ?? "Server=localhost;Database=battlehub_profiles;User=root;Password=root;";
+
+    builder.Services.AddDbContext<ProfileDbContext>(options =>
+        options.UseMySQL(connectionString));
+}
+else
+{
+    var inMemoryDbName = builder.Configuration["InMemoryDatabaseName"] ?? "BattleHubProfiles";
+    builder.Services.AddDbContext<ProfileDbContext>(options =>
+        options.UseInMemoryDatabase(inMemoryDbName));
+}
+
+builder.Services.AddScoped<IProfileService, ProfileService>();
 
 // Configuración de OpenAPI con soporte para tokens JWT Bearer de Auth0
 builder.Services.AddOpenApi(options =>

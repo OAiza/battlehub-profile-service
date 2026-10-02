@@ -12,24 +12,36 @@ namespace BattleHub.ProfileService.IntegrationTests;
 public class TestProtectedController : ControllerBase
 {
     [HttpGet]
-    public IActionResult Get() => Ok(new { message = "autorizado" });
+    public IActionResult Get()
+    {
+        return Ok(new { message = "autorizado" });
+    }
 }
 
 [Trait("Category", "Integration")]
-public class SecurityEndpointTests(WebApplicationFactory<Program> factory)
-    : IClassFixture<WebApplicationFactory<Program>>
+public class SecurityEndpointTests : IClassFixture<WebApplicationFactory<Program>>
 {
+    private readonly WebApplicationFactory<Program> _factory;
+
+    public SecurityEndpointTests(WebApplicationFactory<Program> factory)
+    {
+        _factory = factory;
+    }
+
     [Fact]
     public async Task EndpointProtegido_SinToken_Responde401Unauthorized()
     {
-        var client = factory.WithWebHostBuilder(builder =>
-        {
-            builder.ConfigureServices(services =>
+        var client = _factory
+            .WithWebHostBuilder(builder =>
             {
-                services.AddControllers()
-                    .AddApplicationPart(typeof(SecurityEndpointTests).Assembly);
-            });
-        }).CreateClient();
+                builder.ConfigureServices(services =>
+                {
+                    services
+                        .AddControllers()
+                        .AddApplicationPart(typeof(TestProtectedController).Assembly);
+                });
+            })
+            .CreateClient();
 
         var response = await client.GetAsync("/api/test-protected");
 
@@ -39,11 +51,10 @@ public class SecurityEndpointTests(WebApplicationFactory<Program> factory)
     [Fact]
     public async Task HealthEndpoint_SinToken_SigueRespondiendo200Ok()
     {
-        var client = factory.CreateClient();
+        var client = _factory.CreateClient();
 
         var response = await client.GetAsync("/health");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 }
-
