@@ -2,6 +2,8 @@ using ProfileServiceImpl = BattleHub.ProfileService.Api.Services.ProfileService;
 using BattleHub.ProfileService.Api.Data;
 using BattleHub.ProfileService.Api.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Storage;
 using Xunit;
 
 namespace BattleHub.ProfileService.UnitTests;
@@ -159,5 +161,132 @@ public class ProfileServiceTests
         // Assert
         Assert.Single(games);
         Assert.Equal("typing", games[0].GameType);
+    }
+
+    [Fact]
+    public async Task SyncProfileAsync_NuevoUsuario_NoRecibePermisosFueraDeLaListaBasica()
+    {
+        // Arrange
+        using var context = CreateInMemoryContext(nameof(SyncProfileAsync_NuevoUsuario_NoRecibePermisosFueraDeLaListaBasica));
+        context.Permissions.Add(new Permission { Code = "reports.review", Description = "Revisar denuncias" });
+        await context.SaveChangesAsync();
+        var service = new ProfileServiceImpl(context);
+
+        // Act
+        await service.SyncProfileAsync("auth0|nuevo-jugador", "Jugador", null);
+
+        // Assert
+        var permissions = await service.GetPermissionsAsync("auth0|nuevo-jugador");
+        Assert.NotNull(permissions);
+        Assert.DoesNotContain("reports.review", permissions.Permissions);
+        Assert.Equal(
+            new[] { "games.memory.play", "games.trivia.play", "games.typing.play", "matches.create" },
+            permissions.Permissions.OrderBy(code => code));
+    }
+
+    [Fact]
+    public async Task SyncProfileAsync_UsuarioExistente_NoRecuperaPermisosRetirados()
+    {
+        // Arrange
+        using var context = CreateInMemoryContext(nameof(SyncProfileAsync_UsuarioExistente_NoRecuperaPermisosRetirados));
+        var service = new ProfileServiceImpl(context);
+        await service.SyncProfileAsync("auth0|sancionado", "Sancionado", null);
+
+        var profile = await context.Profiles.Include(p => p.Permissions).FirstAsync(p => p.Id == "auth0|sancionado");
+        profile.Permissions.Remove(profile.Permissions.First(p => p.Code == "matches.create"));
+        await context.SaveChangesAsync();
+
+        // Act
+        var (_, created) = await service.SyncProfileAsync("auth0|sancionado", "Sancionado", null);
+
+        // Assert
+        Assert.False(created);
+        var permissions = await service.GetPermissionsAsync("auth0|sancionado");
+        Assert.NotNull(permissions);
+        Assert.DoesNotContain("matches.create", permissions.Permissions);
+        Assert.Equal(3, permissions.Permissions.Count);
+    }
+
+    [Fact]
+    public async Task SyncProfileAsync_PerfilCreadoEnParalelo_DevuelveElExistenteSinDuplicar()
+    {
+        // Arrange: otra llamada a /sync inserta el mismo perfil justo antes de que esta guarde.
+        const string userId = "auth0|sync-simultaneo";
+        var databaseName = nameof(SyncProfileAsync_PerfilCreadoEnParalelo_DevuelveElExistenteSinDuplicar);
+        var root = new InMemoryDatabaseRoot();
+
+        using (var seedContext = new ProfileDbContext(CreateOptions(databaseName, root)))
+        {
+            seedContext.Permissions.AddRange(
+                new Permission { Code = "matches.create", Description = "Crear salas de partidas" },
+                new Permission { Code = "games.typing.play", Description = "Jugar a Typing Battle" },
+                new Permission { Code = "games.trivia.play", Description = "Jugar a Trivia Battle" },
+                new Permission { Code = "games.memory.play", Description = "Jugar a Memory Match" });
+            seedContext.SaveChanges();
+        }
+
+        var interceptor = new PerfilCreadoEnParaleloInterceptor(() => new ProfileDbContext(CreateOptions(databaseName, root)), userId);
+        using var context = new ProfileDbContext(CreateOptions(databaseName, root, interceptor));
+        var service = new ProfileServiceImpl(context);
+
+        // Act
+        var (profile, created) = await service.SyncProfileAsync(userId, "Francisco", null);
+
+        // Assert
+        Assert.False(created);
+        Assert.Equal(userId, profile.Id);
+        Assert.Equal("Francisco", profile.DisplayName);
+
+        using var verifyContext = new ProfileDbContext(CreateOptions(databaseName, root));
+        Assert.Equal(1, await verifyContext.Profiles.CountAsync(p => p.Id == userId));
+    }
+
+    private static DbContextOptions<ProfileDbContext> CreateOptions(
+        string databaseName,
+        InMemoryDatabaseRoot root,
+        IInterceptor? interceptor = null)
+    {
+        var builder = new DbContextOptionsBuilder<ProfileDbContext>()
+            .UseInMemoryDatabase(databaseName, root);
+
+        if (interceptor != null)
+        {
+            builder.AddInterceptors(interceptor);
+        }
+
+        return builder.Options;
+    }
+
+    // Simula la carrera tal como la reporta MySQL: otra llamada inserta el perfil primero y
+    // el INSERT de esta falla por llave duplicada, que EF Core envuelve en DbUpdateException.
+    // (El proveedor en memoria lanzaría ArgumentException, que no representa al motor real.)
+    private sealed class PerfilCreadoEnParaleloInterceptor(Func<ProfileDbContext> createOtherContext, string userId)
+        : SaveChangesInterceptor
+    {
+        private bool _alreadyInserted;
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (!_alreadyInserted)
+            {
+                _alreadyInserted = true;
+                using var otherContext = createOtherContext();
+                otherContext.Profiles.Add(new Profile
+                {
+                    Id = userId,
+                    DisplayName = "Creado en paralelo",
+                    CreatedAt = DateTime.UtcNow,
+                    LastLoginAt = DateTime.UtcNow
+                });
+                await otherContext.SaveChangesAsync(cancellationToken);
+
+                throw new DbUpdateException($"Duplicate entry '{userId}' for key 'profiles.PRIMARY'");
+            }
+
+            return result;
+        }
     }
 }

@@ -42,8 +42,8 @@ global.json                                  → versión del SDK de .NET (10)
 Requisitos previos:
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
-- MySQL (local o en contenedor con Docker), cuando se agregue la persistencia
-- Acceso al tenant de Auth0 del proyecto, cuando se agregue la autenticación
+- MySQL 8 (local o en contenedor con Docker), para cualquier entorno distinto de Development
+- Acceso al tenant de Auth0 del proyecto
 
 Compilar y ejecutar la API:
 
@@ -52,6 +52,27 @@ dotnet restore
 dotnet build
 dotnet run --project src/BattleHub.ProfileService.Api
 ```
+
+### Base de datos
+
+El proveedor se elige con la variable `DatabaseProvider`:
+
+| Valor | Uso |
+|---|---|
+| `MySQL` | Motor oficial del servicio. Requiere `ConnectionStrings:DefaultConnection`. |
+| `InMemory` | Solo para desarrollo rápido y pruebas. Los perfiles se pierden al reiniciar. |
+
+- En **Development**, si `DatabaseProvider` no está definido se usa `InMemory`.
+- En **cualquier otro entorno**, `DatabaseProvider` es obligatorio. Si falta, tiene un valor desconocido o falta la cadena de conexión de MySQL, la API no arranca y muestra el motivo.
+
+La cadena de conexión no se versiona. Para usar MySQL en local, se configura con user-secrets:
+
+```bash
+dotnet user-secrets --project src/BattleHub.ProfileService.Api set "DatabaseProvider" "MySQL"
+dotnet user-secrets --project src/BattleHub.ProfileService.Api set "ConnectionStrings:DefaultConnection" "Server=localhost;Database=battlehub_profiles;User=<usuario>;Password=<contraseña>;"
+```
+
+En despliegue se usan las variables de entorno `DatabaseProvider=MySQL` y `ConnectionStrings__DefaultConnection`.
 
 La API queda en `http://localhost:5220` (puerto provisional hasta que se acuerden los puertos del proyecto). Endpoints disponibles:
 

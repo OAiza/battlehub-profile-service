@@ -44,11 +44,15 @@ public class ProfileService : IProfileService
                 LastLoginAt = now
             };
 
-            var defaultPermissions = await _context.Permissions.ToListAsync(cancellationToken);
+            // Solo los permisos básicos de jugador, nunca todos los que existan en la tabla.
+            // El catálogo de permisos es pequeño: se filtra en memoria para no depender de
+            // cómo traduzca cada proveedor un Contains sobre una lista.
+            var defaultPermissions = (await _context.Permissions.ToListAsync(cancellationToken))
+                .Where(p => PlayerPermissions.Default.Contains(p.Code))
+                .ToList();
             if (defaultPermissions.Count == 0)
             {
-                var defaultCodes = new[] { "matches.create", "games.typing.play", "games.trivia.play", "games.memory.play" };
-                defaultPermissions = defaultCodes.Select(code => new Permission { Code = code, Description = code }).ToList();
+                defaultPermissions = PlayerPermissions.Default.Select(code => new Permission { Code = code, Description = code }).ToList();
                 _context.Permissions.AddRange(defaultPermissions);
             }
 
@@ -72,7 +76,23 @@ public class ProfileService : IProfileService
             }
         }
 
-        await _context.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException) when (created)
+        {
+            // Otra llamada simultánea a /sync creó el mismo perfil primero.
+            // Se descarta el alta y se continúa con el perfil que ya existe.
+            _context.ChangeTracker.Clear();
+            var alreadyExists = await _context.Profiles.AnyAsync(p => p.Id == userId, cancellationToken);
+            if (!alreadyExists)
+            {
+                throw;
+            }
+
+            return await SyncProfileAsync(userId, displayName, email, cancellationToken);
+        }
 
         var response = new ProfileResponse
         {
