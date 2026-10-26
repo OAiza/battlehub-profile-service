@@ -38,7 +38,7 @@ public class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions
             ? customUserId.ToString()
             : DefaultUserId;
 
-        var claims = new[]
+        var claims = new List<Claim>
         {
             new Claim(ClaimTypes.NameIdentifier, userId),
             new Claim("sub", userId),
@@ -47,6 +47,11 @@ public class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions
             new Claim(ClaimTypes.Email, DefaultUserEmail),
             new Claim("email", DefaultUserEmail)
         };
+
+        if (Request.Headers.TryGetValue("X-Test-Gty", out var grantType))
+        {
+            claims.Add(new Claim("gty", grantType.ToString()));
+        }
 
         var identity = new ClaimsIdentity(claims, "Test");
         var principal = new ClaimsPrincipal(identity);
@@ -196,6 +201,54 @@ public class ProfileEndpointTests : IClassFixture<WebApplicationFactory<Program>
         Assert.Contains(games, g => g.GameType == "typing");
         Assert.Contains(games, g => g.GameType == "trivia");
         Assert.Contains(games, g => g.GameType == "memory");
+    }
+
+    [Fact]
+    public async Task PostSync_ClienteM2MPorSub_Responde403YNoCreaPerfil()
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Test-UserId", "abc123XYZ@clients");
+
+        var syncResponse = await client.PostAsJsonAsync("/api/profiles/sync", new { displayName = "Servicio" });
+        Assert.Equal(HttpStatusCode.Forbidden, syncResponse.StatusCode);
+        Assert.Equal("application/problem+json", syncResponse.Content.Headers.ContentType?.MediaType);
+
+        var meResponse = await client.GetAsync("/api/profiles/me");
+        Assert.Equal(HttpStatusCode.NotFound, meResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task PostSync_ClienteM2MPorGrantType_Responde403()
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Test-UserId", "auth0|token-de-servicio");
+        client.DefaultRequestHeaders.Add("X-Test-Gty", "client-credentials");
+
+        var response = await client.PostAsJsonAsync("/api/profiles/sync", new { displayName = "Servicio" });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetMe_DosCuentas_CadaTokenSoloVeSuPropioPerfil()
+    {
+        var clientA = _factory.CreateClient();
+        clientA.DefaultRequestHeaders.Add("X-Test-UserId", "auth0|cuenta-a");
+        var clientB = _factory.CreateClient();
+        clientB.DefaultRequestHeaders.Add("X-Test-UserId", "auth0|cuenta-b");
+
+        await clientA.PostAsJsonAsync("/api/profiles/sync", new { displayName = "Cuenta A" });
+        await clientB.PostAsJsonAsync("/api/profiles/sync", new { displayName = "Cuenta B" });
+
+        var profileA = await clientA.GetFromJsonAsync<ProfileResponse>("/api/profiles/me");
+        var profileB = await clientB.GetFromJsonAsync<ProfileResponse>("/api/profiles/me");
+
+        Assert.NotNull(profileA);
+        Assert.NotNull(profileB);
+        Assert.Equal("auth0|cuenta-a", profileA.Id);
+        Assert.Equal("Cuenta A", profileA.DisplayName);
+        Assert.Equal("auth0|cuenta-b", profileB.Id);
+        Assert.Equal("Cuenta B", profileB.DisplayName);
     }
 
     [Fact]

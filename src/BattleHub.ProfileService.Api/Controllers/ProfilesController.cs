@@ -22,6 +22,7 @@ public class ProfilesController : ControllerBase
     [ProducesResponseType(typeof(ProfileResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProfileResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> Sync([FromBody] SyncProfileRequest? request, CancellationToken cancellationToken)
     {
         var userId = GetUserId();
@@ -32,6 +33,16 @@ public class ProfilesController : ControllerBase
                 Title = "No autorizado",
                 Detail = "No se encontró el identificador del usuario (sub/nameidentifier) en el token.",
                 Status = StatusCodes.Status401Unauthorized
+            });
+        }
+
+        if (IsServiceClient(userId))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails
+            {
+                Title = "Prohibido",
+                Detail = "Los clientes de servicio (M2M) no pueden registrarse como jugadores.",
+                Status = StatusCodes.Status403Forbidden
             });
         }
 
@@ -124,6 +135,14 @@ public class ProfilesController : ControllerBase
     {
         return User.FindFirst(ClaimTypes.NameIdentifier)?.Value
             ?? User.FindFirst("sub")?.Value;
+    }
+
+    // Auth0 emite los tokens M2M (client credentials) con gty = "client-credentials"
+    // y un sub terminado en "@clients".
+    private bool IsServiceClient(string userId)
+    {
+        return User.FindFirst("gty")?.Value == "client-credentials"
+            || userId.EndsWith("@clients", StringComparison.Ordinal);
     }
 }
 

@@ -14,14 +14,37 @@ builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy.Wi
 // Configuración de Auth0
 builder.Services.Configure<Auth0Options>(builder.Configuration.GetSection(Auth0Options.SectionName));
 
-// Configuración de persistencia con EF Core
+// Configuración de persistencia con EF Core.
+// Fuera de Development, DatabaseProvider es obligatorio: un despliegue mal configurado
+// falla al arrancar en vez de guardar los perfiles en memoria y perderlos al reiniciar.
 var dbProvider = builder.Configuration["DatabaseProvider"];
-bool useMySql = string.Equals(dbProvider, "MySQL", StringComparison.OrdinalIgnoreCase) || EF.IsDesignTime;
+if (EF.IsDesignTime)
+{
+    dbProvider = "MySQL";
+}
+else if (string.IsNullOrWhiteSpace(dbProvider) && builder.Environment.IsDevelopment())
+{
+    dbProvider = "InMemory";
+}
+
+bool useMySql = string.Equals(dbProvider, "MySQL", StringComparison.OrdinalIgnoreCase);
+bool useInMemory = string.Equals(dbProvider, "InMemory", StringComparison.OrdinalIgnoreCase);
+
+if (!useMySql && !useInMemory)
+{
+    throw new InvalidOperationException(
+        $"DatabaseProvider debe ser 'MySQL' o 'InMemory' (valor actual: '{dbProvider}').");
+}
 
 if (useMySql)
 {
+    // La cadena de conexión no se versiona: va en user-secrets o en la variable de entorno
+    // ConnectionStrings__DefaultConnection. Generar migraciones no necesita conectarse a MySQL.
     var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
-        ?? "Server=localhost;Database=battlehub_profiles;User=root;Password=root;";
+        ?? (EF.IsDesignTime
+            ? "Server=localhost;Database=battlehub_profiles;"
+            : throw new InvalidOperationException(
+                "Falta la cadena de conexión 'ConnectionStrings:DefaultConnection'."));
 
     builder.Services.AddDbContext<ProfileDbContext>(options =>
         options.UseMySQL(connectionString));
