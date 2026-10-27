@@ -43,6 +43,9 @@ services:
       Auth0__Domain: ${AUTH0_DOMAIN:?Defina AUTH0_DOMAIN en .env}
       Auth0__Audience: ${AUTH0_AUDIENCE:?Defina AUTH0_AUDIENCE en .env}
       Cors__Origins__0: ${CORS_ORIGIN:-http://localhost:4000}
+      Cors__Origins__1: ${CORS_ORIGIN_PUBLISHED:-}
+      # El contenedor solo escucha HTTP: sin redirección para no romper el CORS del Shell.
+      Https__Redirect: ${HTTPS_REDIRECT:-false}
     ports:
       - "${PROFILE_API_PORT:-5220}:8080"
     depends_on:

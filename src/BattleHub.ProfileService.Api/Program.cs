@@ -9,7 +9,13 @@ using Microsoft.OpenApi;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
-builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy.WithOrigins(builder.Configuration.GetSection("Cors:Origins").Get<string[]>() ?? ["http://localhost:4000"]).AllowAnyHeader().AllowAnyMethod()));
+
+// Orígenes del navegador que pueden llamar a la API (ADR-006): el Shell local y el publicado.
+// Las entradas vacías se ignoran, para poder dejar sin valor un origen opcional en el .env.
+var corsOrigins = (builder.Configuration.GetSection("Cors:Origins").Get<string[]>() ?? ["http://localhost:4000"])
+    .Where(origin => !string.IsNullOrWhiteSpace(origin))
+    .ToArray();
+builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy.WithOrigins(corsOrigins).AllowAnyHeader().AllowAnyMethod()));
 
 // Configuración de Auth0
 builder.Services.Configure<Auth0Options>(builder.Configuration.GetSection(Auth0Options.SectionName));
@@ -90,7 +96,7 @@ builder.Services.AddHealthChecks();
 
 // Configuración de Autenticación JWT Bearer con Auth0
 var auth0Domain = builder.Configuration["Auth0:Domain"] ?? "auth.battlehub.local";
-var auth0Audience = builder.Configuration["Auth0:Audience"] ?? "https://api.battlehub.com";
+var auth0Audience = builder.Configuration["Auth0:Audience"] ?? "https://api.battlehub.local/profile";
 
 builder.Services.AddAuthentication(options =>
 {
@@ -145,7 +151,13 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
+// Redirección a HTTPS, activa por defecto. Se desactiva con Https:Redirect=false cuando la API
+// solo escucha HTTP (el contenedor, o detrás de un proxy que ya maneja HTTPS): el navegador no
+// acepta redirecciones en la petición previa de CORS y la llamada del Shell fallaría.
+if (builder.Configuration.GetValue("Https:Redirect", true))
+{
+    app.UseHttpsRedirection();
+}
 
 app.UseCors();
 
