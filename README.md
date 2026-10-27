@@ -35,6 +35,7 @@ global.json                                  → versión del SDK de .NET (10)
 /tests/BattleHub.ProfileService.UnitTests    → pruebas unitarias (Category=Unit)
 /tests/BattleHub.ProfileService.IntegrationTests → pruebas de integración (Category=Integration)
 /.github/workflows                           → pipeline de CI/CD
+Dockerfile, docker-compose.yml, .env.example → ejecución con Docker
 ```
 
 ## Cómo correrlo localmente
@@ -74,6 +75,53 @@ dotnet user-secrets --project src/BattleHub.ProfileService.Api set "ConnectionSt
 
 En despliegue se usan las variables de entorno `DatabaseProvider=MySQL` y `ConnectionStrings__DefaultConnection`.
 
+Las migraciones (que incluyen los permisos y el catálogo de juegos) se aplican de forma explícita, nunca al arrancar la API:
+
+```bash
+dotnet run --project src/BattleHub.ProfileService.Api -- --migrate
+```
+
+## Ejecutar con Docker
+
+Requisito: [Docker Desktop](https://www.docker.com/products/docker-desktop/) o Docker Engine con Docker Compose.
+
+1. Copiar el archivo de variables y completar los valores (contraseñas de MySQL, dominio y audience de Auth0):
+
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Levantar todo:
+
+   ```bash
+   docker compose up --build
+   ```
+
+   Se inician tres servicios, en este orden:
+
+   | Servicio | Qué hace |
+   |---|---|
+   | `mysql` | MySQL 8.4 con los datos en el volumen `profile-mysql-data`. |
+   | `migrate` | Aplica las migraciones y carga los datos iniciales; termina al acabar. |
+   | `api` | La API, en `http://localhost:5220`. Arranca solo si `migrate` terminó bien. |
+
+3. Comprobar que funciona:
+
+   ```bash
+   curl http://localhost:5220/health
+   curl -i http://localhost:5220/api/profiles/me
+   ```
+
+   El primero responde `Healthy` y el segundo `401` (no se envió token).
+
+4. Detener y borrar todo, incluidos los datos:
+
+   ```bash
+   docker compose down -v
+   ```
+
+La imagen no contiene secretos, corre con un usuario sin privilegios y usa versiones fijas de las imágenes base. El CI construye la imagen y hace esta misma prueba en cada Pull Request.
+
 La API queda en `http://localhost:5220` (puerto provisional hasta que se acuerden los puertos del proyecto). Endpoints disponibles:
 
 - `GET /health` → estado del servicio
@@ -85,6 +133,8 @@ Ejecutar las pruebas:
 dotnet test --filter Category=Unit
 dotnet test --filter Category=Integration
 ```
+
+Las pruebas de integración contra MySQL real levantan un contenedor con [Testcontainers](https://dotnet.testcontainers.org/), así que necesitan Docker. Sin Docker se saltan con un aviso; en el CI se ejecutan siempre.
 
 Los secretos (cadena de conexión, dominio y audience de Auth0) no se versionan. Se configuran con `dotnet user-secrets` o variables de entorno.
 

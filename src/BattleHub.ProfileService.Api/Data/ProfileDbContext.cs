@@ -14,6 +14,12 @@ public class ProfileDbContext : DbContext
     public DbSet<Permission> Permissions => Set<Permission>();
     public DbSet<Game> Games => Set<Game>();
 
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        // Convención del proyecto: todas las fechas en UTC (ISO-8601 con sufijo Z).
+        configurationBuilder.Properties<DateTime>().HaveConversion<UtcDateTimeConverter>();
+    }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

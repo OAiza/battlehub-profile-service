@@ -1,0 +1,54 @@
+# Levanta el Profile Service con su base de datos:
+#   cp .env.example .env    (y completar los valores)
+#   docker compose up --build
+# Para borrar todo, incluidos los datos:  docker compose down -v
+
+services:
+  mysql:
+    image: mysql:8.4.9
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Defina MYSQL_ROOT_PASSWORD en .env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?Defina MYSQL_DATABASE en .env}
+      MYSQL_USER: ${MYSQL_USER:?Defina MYSQL_USER en .env}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Defina MYSQL_PASSWORD en .env}
+    volumes:
+      - profile-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping --host=localhost --user=root --password=$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  # Aplica las migraciones y carga los datos iniciales (permisos y catálogo de juegos).
+  # Se ejecuta una vez y termina; la API arranca solo si terminó bien.
+  migrate:
+    build: .
+    image: battlehub-profile-service:local
+    command: ["--migrate"]
+    environment:
+      DatabaseProvider: MySQL
+      ConnectionStrings__DefaultConnection: Server=mysql;Port=3306;Database=${MYSQL_DATABASE};User=${MYSQL_USER};Password=${MYSQL_PASSWORD};
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build: .
+    image: battlehub-profile-service:local
+    environment:
+      DatabaseProvider: MySQL
+      ConnectionStrings__DefaultConnection: Server=mysql;Port=3306;Database=${MYSQL_DATABASE};User=${MYSQL_USER};Password=${MYSQL_PASSWORD};
+      Auth0__Domain: ${AUTH0_DOMAIN:?Defina AUTH0_DOMAIN en .env}
+      Auth0__Audience: ${AUTH0_AUDIENCE:?Defina AUTH0_AUDIENCE en .env}
+      Cors__Origins__0: ${CORS_ORIGIN:-http://localhost:4000}
+    ports:
+      - "${PROFILE_API_PORT:-5220}:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  profile-mysql-data:
