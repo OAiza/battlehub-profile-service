@@ -117,6 +117,20 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
+// `--migrate` aplica las migraciones pendientes (incluidos los datos iniciales de permisos y
+// juegos) y termina sin levantar la API. Lo usa el servicio `migrate` de docker-compose.yml.
+if (args.Contains("--migrate"))
+{
+    if (!useMySql)
+    {
+        throw new InvalidOperationException("--migrate solo aplica con DatabaseProvider=MySQL.");
+    }
+
+    using var migrationScope = app.Services.CreateScope();
+    await migrationScope.ServiceProvider.GetRequiredService<ProfileDbContext>().Database.MigrateAsync();
+    return;
+}
+
 if (!useMySql)
 {
     using var scope = app.Services.CreateScope();

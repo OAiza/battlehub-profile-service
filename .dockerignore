@@ -1,0 +1,17 @@
+# Alineado con .gitignore: nada de artefactos de build, secretos ni archivos de IDE en la imagen.
+**/bin/
+**/obj/
+**/TestResults/
+**/*.user
+.git/
+.github/
+.vs/
+.vscode/
+.idea/
+.env
+.env.*
+docs/
+tests/
+scripts/
+Dockerfile
+docker-compose.yml
