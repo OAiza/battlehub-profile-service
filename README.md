@@ -136,6 +136,21 @@ dotnet test --filter Category=Integration
 
 Las pruebas de integración contra MySQL real levantan un contenedor con [Testcontainers](https://dotnet.testcontainers.org/), así que necesitan Docker. Sin Docker se saltan con un aviso; en el CI se ejecutan siempre.
 
+### Cobertura
+
+El CI exige al menos **85% de cobertura de líneas** del código de la API (sin contar migraciones ni código generado) y falla si baja de ese valor. El resultado aparece en el resumen de cada ejecución del CI.
+
+Para medirla en local (ReportGenerator está fijado en `dotnet-tools.json`):
+
+```bash
+dotnet tool restore
+dotnet test --collect:"XPlat Code Coverage" --results-directory coverage/raw
+dotnet reportgenerator "-reports:coverage/raw/**/coverage.cobertura.xml" "-targetdir:coverage/report" "-reporttypes:TextSummary" "-assemblyfilters:+BattleHub.ProfileService.Api" "-filefilters:-*/Migrations/*;-*/obj/*"
+cat coverage/report/Summary.txt
+```
+
+En local la cifra puede ser algo menor que en el CI, porque sin Docker se saltan las pruebas contra MySQL.
+
 Los secretos (cadena de conexión, dominio y audience de Auth0) no se versionan. Se configuran con `dotnet user-secrets` o variables de entorno.
 
 ## Convenciones

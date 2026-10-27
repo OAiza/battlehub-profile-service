@@ -15,18 +15,23 @@ jobs:
   build-and-test:
     name: Build and Test
     runs-on: ubuntu-latest
+    env:
+      # Cobertura mínima de líneas del código de la API (sin migraciones ni código generado).
+      COVERAGE_MIN: 85
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
 
       - name: Restore dependencies
-        run: dotnet restore
+        run: |
+          dotnet restore
+          dotnet tool restore
 
       - name: Build
         run: dotnet build --configuration Release --no-restore
@@ -37,6 +42,8 @@ jobs:
           tests/BattleHub.ProfileService.UnitTests/BattleHub.ProfileService.UnitTests.csproj
           --configuration Release
           --no-build
+          --collect:"XPlat Code Coverage"
+          --results-directory coverage/raw
 
       # Incluye las pruebas contra MySQL real, que levantan un contenedor con Testcontainers.
       - name: Run integration tests
@@ -45,6 +52,29 @@ jobs:
           tests/BattleHub.ProfileService.IntegrationTests/BattleHub.ProfileService.IntegrationTests.csproj
           --configuration Release
           --no-build
+          --collect:"XPlat Code Coverage"
+          --results-directory coverage/raw
+
+      - name: Coverage report
+        run: >
+          dotnet reportgenerator
+          "-reports:coverage/raw/**/coverage.cobertura.xml"
+          "-targetdir:coverage/report"
+          "-reporttypes:TextSummary;MarkdownSummaryGithub"
+          "-assemblyfilters:+BattleHub.ProfileService.Api"
+          "-filefilters:-*/Migrations/*;-*/obj/*"
+
+      - name: Check minimum coverage
+        run: |
+          cat coverage/report/SummaryGithub.md >> "$GITHUB_STEP_SUMMARY"
+          coverage=$(grep --perl-regexp --only-matching 'Line coverage: \K[0-9.]+' coverage/report/Summary.txt)
+          echo "Cobertura de líneas: ${coverage}% (mínimo: ${COVERAGE_MIN}%)"
+          if awk -v actual="$coverage" -v min="$COVERAGE_MIN" 'BEGIN { exit !(actual >= min) }'; then
+            echo "Cobertura suficiente."
+          else
+            echo "::error::La cobertura de líneas (${coverage}%) es menor al mínimo de ${COVERAGE_MIN}%."
+            exit 1
+          fi
 
   docker:
     name: Docker build and smoke test
@@ -53,7 +83,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # El CI no usa secretos: los valores de ejemplo bastan para probar el arranque.
       - name: Prepare environment file
