@@ -81,6 +81,17 @@ Las migraciones (que incluyen los permisos y el catálogo de juegos) se aplican 
 dotnet run --project src/BattleHub.ProfileService.Api -- --migrate
 ```
 
+### Auth0, CORS y HTTPS
+
+| Variable | Valor por defecto | Para qué sirve |
+|---|---|---|
+| `Auth0__Domain` | `auth.battlehub.local` (marcador) | Dominio del tenant de Auth0. |
+| `Auth0__Audience` | `https://api.battlehub.local/profile` | Identifier de la API en Auth0, compartido con Matchmaking (ADR-007). |
+| `Cors__Origins__0`, `Cors__Origins__1`, … | `http://localhost:4000` | Orígenes del navegador que pueden llamar a la API: el Shell local y el publicado (ADR-006). Las entradas vacías se ignoran. |
+| `Https__Redirect` | `true` | Redirige HTTP a HTTPS. Debe ser `false` cuando la API solo escucha HTTP, porque el navegador no acepta redirecciones en la petición previa de CORS. |
+
+Si la API se publica detrás de un proxy que maneja el HTTPS, defina `Https__Redirect=false` y `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true`. Con esa variable, ASP.NET Core lee los encabezados `X-Forwarded-*` del proxy y sabe que la petición original llegó por HTTPS.
+
 ## Ejecutar con Docker
 
 Requisito: [Docker Desktop](https://www.docker.com/products/docker-desktop/) o Docker Engine con Docker Compose.
