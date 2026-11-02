@@ -7,12 +7,12 @@ namespace BattleHub.ProfileService.Api.Services;
 
 public class ProfileService : IProfileService
 {
-    private readonly ProfileDbContext _context;
+    private readonly IProfileRepository _repository;
     private readonly IAuth0ManagementClient _auth0ManagementClient;
 
-    public ProfileService(ProfileDbContext context, IAuth0ManagementClient auth0ManagementClient)
+    public ProfileService(IProfileRepository repository, IAuth0ManagementClient auth0ManagementClient)
     {
-        _context = context;
+        _repository = repository;
         _auth0ManagementClient = auth0ManagementClient;
     }
 
@@ -27,8 +27,7 @@ public class ProfileService : IProfileService
             throw new ArgumentException("El userId no puede ser nulo ni vacío.", nameof(userId));
         }
 
-        var profile = await _context.Profiles
-            .FirstOrDefaultAsync(p => p.Auth0UserId == userId, cancellationToken);
+        var profile = await _repository.GetByAuth0UserIdAsync(userId, cancellationToken);
 
         bool created = false;
         var now = DateTime.UtcNow;
@@ -45,9 +44,9 @@ public class ProfileService : IProfileService
                 LastLoginAt = now
             };
 
-            // NOTA R-47 / R-48: Ya no se asignan permisos de juegos por defecto en MySQL.
-            // Los permisos provienen exclusivamente de Auth0 Management API.
-            _context.Profiles.Add(profile);
+            // R-47 / R-48: /sync solo crea o actualiza el perfil. Los permisos y juegos se leen
+            // de Auth0 en cada consulta, así que aquí no se concede ni se restaura ninguno.
+            _repository.Add(profile);
         }
         else
         {
@@ -64,14 +63,14 @@ public class ProfileService : IProfileService
 
         try
         {
-            await _context.SaveChangesAsync(cancellationToken);
+            await _repository.SaveChangesAsync(cancellationToken);
         }
         catch (DbUpdateException) when (created)
         {
             // Otra llamada simultánea a /sync creó el mismo perfil primero.
             // Se descarta el alta y se continúa con el perfil que ya existe.
-            _context.ChangeTracker.Clear();
-            var alreadyExists = await _context.Profiles.AnyAsync(p => p.Auth0UserId == userId, cancellationToken);
+            _repository.DiscardChanges();
+            var alreadyExists = await _repository.ExistsAsync(userId, cancellationToken);
             if (!alreadyExists)
             {
                 throw;
@@ -80,46 +79,18 @@ public class ProfileService : IProfileService
             return await SyncProfileAsync(userId, displayName, email, cancellationToken);
         }
 
-        var response = new ProfileResponse
-        {
-            Id = profile.Auth0UserId,
-            DisplayName = profile.DisplayName,
-            Email = profile.Email,
-            CreatedAt = profile.CreatedAt,
-            LastLoginAt = profile.LastLoginAt
-        };
-
-        return (response, created);
+        return (ToResponse(profile), created);
     }
 
     public async Task<ProfileResponse?> GetProfileAsync(string userId, CancellationToken cancellationToken = default)
     {
-        var profile = await _context.Profiles
-            .AsNoTracking()
-            .FirstOrDefaultAsync(p => p.Auth0UserId == userId, cancellationToken);
-
-        if (profile == null)
-        {
-            return null;
-        }
-
-        return new ProfileResponse
-        {
-            Id = profile.Auth0UserId,
-            DisplayName = profile.DisplayName,
-            Email = profile.Email,
-            CreatedAt = profile.CreatedAt,
-            LastLoginAt = profile.LastLoginAt
-        };
+        var profile = await _repository.GetByAuth0UserIdAsync(userId, cancellationToken);
+        return profile == null ? null : ToResponse(profile);
     }
 
     public async Task<PermissionResponse?> GetPermissionsAsync(string userId, CancellationToken cancellationToken = default)
     {
-        var profile = await _context.Profiles
-            .AsNoTracking()
-            .FirstOrDefaultAsync(p => p.Auth0UserId == userId, cancellationToken);
-
-        if (profile == null)
+        if (!await _repository.ExistsAsync(userId, cancellationToken))
         {
             return null;
         }
@@ -134,22 +105,42 @@ public class ProfileService : IProfileService
 
     public async Task<IReadOnlyList<GameResponse>> GetEnabledGamesForUserAsync(string userId, CancellationToken cancellationToken = default)
     {
-        var profile = await _context.Profiles
-            .AsNoTracking()
-            .FirstOrDefaultAsync(p => p.Auth0UserId == userId, cancellationToken);
-
-        if (profile == null)
+        if (!await _repository.ExistsAsync(userId, cancellationToken))
         {
             return Array.Empty<GameResponse>();
         }
 
         var effectivePermissions = await _auth0ManagementClient.GetUserEffectivePermissionsAsync(userId, cancellationToken);
-        var userPermissions = effectivePermissions.ToHashSet(StringComparer.Ordinal);
+        return await GetGamesAllowedByAsync(effectivePermissions, cancellationToken);
+    }
 
-        var games = await _context.Games
-            .AsNoTracking()
-            .Where(g => g.Enabled)
-            .ToListAsync(cancellationToken);
+    public async Task<UserAccessResponse> GetUserAccessAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            throw new ArgumentException("El userId no puede ser nulo ni vacío.", nameof(userId));
+        }
+
+        var effectivePermissions = await _auth0ManagementClient.GetUserEffectivePermissionsAsync(userId, cancellationToken);
+
+        return new UserAccessResponse
+        {
+            UserId = userId,
+            Permissions = effectivePermissions,
+            Games = await GetGamesAllowedByAsync(effectivePermissions, cancellationToken)
+        };
+    }
+
+    /// <summary>
+    /// Cruza los permisos de Auth0 con el catálogo habilitado: un juego aparece solo si el
+    /// usuario tiene exactamente el permiso que ese juego requiere.
+    /// </summary>
+    private async Task<IReadOnlyList<GameResponse>> GetGamesAllowedByAsync(
+        IEnumerable<string> permissions,
+        CancellationToken cancellationToken)
+    {
+        var userPermissions = permissions.ToHashSet(StringComparer.Ordinal);
+        var games = await _repository.GetEnabledGamesAsync(cancellationToken);
 
         return games
             .Where(g => userPermissions.Contains(g.RequiredPermission))
@@ -162,36 +153,15 @@ public class ProfileService : IProfileService
             .ToList();
     }
 
-    public async Task<UserAccessResponse> GetUserAccessAsync(string userId, CancellationToken cancellationToken = default)
+    private static ProfileResponse ToResponse(Profile profile)
     {
-        if (string.IsNullOrWhiteSpace(userId))
+        return new ProfileResponse
         {
-            throw new ArgumentException("El userId no puede ser nulo ni vacío.", nameof(userId));
-        }
-
-        var effectivePermissions = await _auth0ManagementClient.GetUserEffectivePermissionsAsync(userId, cancellationToken);
-        var userPermissions = effectivePermissions.ToHashSet(StringComparer.Ordinal);
-
-        var games = await _context.Games
-            .AsNoTracking()
-            .Where(g => g.Enabled)
-            .ToListAsync(cancellationToken);
-
-        var userGames = games
-            .Where(g => userPermissions.Contains(g.RequiredPermission))
-            .Select(g => new GameResponse
-            {
-                GameType = g.GameType,
-                Name = g.Name,
-                RequiredPermission = g.RequiredPermission
-            })
-            .ToList();
-
-        return new UserAccessResponse
-        {
-            UserId = userId,
-            Permissions = effectivePermissions,
-            Games = userGames
+            Id = profile.Auth0UserId,
+            DisplayName = profile.DisplayName,
+            Email = profile.Email,
+            CreatedAt = profile.CreatedAt,
+            LastLoginAt = profile.LastLoginAt
         };
     }
 }

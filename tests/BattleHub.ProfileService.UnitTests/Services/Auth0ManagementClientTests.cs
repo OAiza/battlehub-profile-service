@@ -6,7 +6,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
-namespace BattleHub.ProfileService.UnitTests;
+namespace BattleHub.ProfileService.UnitTests.Services;
 
 [Trait("Category", "Unit")]
 public class Auth0ManagementClientTests

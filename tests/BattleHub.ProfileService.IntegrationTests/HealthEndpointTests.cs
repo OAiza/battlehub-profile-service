@@ -1,24 +1,15 @@
 using System.Net;
 using BattleHub.ProfileService.IntegrationTests.Infrastructure;
-using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace BattleHub.ProfileService.IntegrationTests;
 
 [Trait("Category", "Integration")]
-public class HealthEndpointTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class HealthEndpointTests : IDisposable
 {
-    private readonly WebApplicationFactory<Program> _factory;
+    // Ninguna de estas pruebas abre la base: no hace falta MySQL ni una base simulada.
+    private readonly ProfileApiFactory _factory = new();
 
-    public HealthEndpointTests(WebApplicationFactory<Program> factory)
-    {
-        var dbName = "HealthDb_" + Guid.NewGuid().ToString("N");
-
-        _factory = factory.WithWebHostBuilder(builder =>
-        {
-            TestHost.ApplySettings(builder);
-            builder.ConfigureServices(services => TestHost.UseInMemoryDatabase(services, dbName));
-        });
-    }
+    public void Dispose() => _factory.Dispose();
 
     [Fact]
     public async Task Health_RespondeOk()

@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using BattleHub.ProfileService.IntegrationTests.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -20,39 +21,46 @@ public class TestProtectedController : ControllerBase
 }
 
 [Trait("Category", "Integration")]
-public class SecurityEndpointTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class SecurityEndpointTests : IDisposable
 {
-    private readonly WebApplicationFactory<Program> _factory;
+    // Ninguna de estas pruebas abre la base: no hace falta MySQL ni una base simulada.
+    private readonly ProfileApiFactory _factory = new();
 
-    public SecurityEndpointTests(WebApplicationFactory<Program> factory)
+    public void Dispose() => _factory.Dispose();
+
+    private WebApplicationFactory<Program> ConControladorProtegido()
     {
-        var dbName = "SecurityDb_" + Guid.NewGuid().ToString("N");
-
-        _factory = factory.WithWebHostBuilder(builder =>
+        return _factory.WithWebHostBuilder(builder =>
         {
-            TestHost.ApplySettings(builder);
-            builder.ConfigureServices(services => TestHost.UseInMemoryDatabase(services, dbName));
+            builder.ConfigureServices(services =>
+            {
+                services
+                    .AddControllers()
+                    .AddApplicationPart(typeof(TestProtectedController).Assembly);
+            });
         });
     }
 
     [Fact]
     public async Task EndpointProtegido_SinToken_Responde401Unauthorized()
     {
-        var client = _factory
-            .WithWebHostBuilder(builder =>
-            {
-                builder.ConfigureServices(services =>
-                {
-                    services
-                        .AddControllers()
-                        .AddApplicationPart(typeof(TestProtectedController).Assembly);
-                });
-            })
-            .CreateClient();
+        var client = ConControladorProtegido().CreateClient();
 
         var response = await client.GetAsync("/api/test-protected");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task EndpointProtegido_ConTokenValido_Responde200()
+    {
+        var client = ConControladorProtegido().CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", TestJwt.CreateToken("auth0|usuario-autorizado"));
+
+        var response = await client.GetAsync("/api/test-protected");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
