@@ -162,6 +162,25 @@ cat coverage/report/Summary.txt
 
 En local la cifra puede ser algo menor que en el CI, porque sin Docker se saltan las pruebas contra MySQL.
 
+### Calidad del código
+
+- **Advertencias como error:** `Directory.Build.props` activa `TreatWarningsAsErrors` en todos los proyectos, así que cualquier advertencia hace fallar la compilación.
+- **Linter:** las convenciones están en `.editorconfig` y el CI las verifica. Para comprobarlas o corregirlas en local:
+
+  ```bash
+  dotnet format BattleHub.ProfileService.slnx --verify-no-changes
+  dotnet format BattleHub.ProfileService.slnx
+  ```
+
+  El primero solo revisa; el segundo corrige los archivos. Las migraciones de EF Core quedan fuera, porque son código generado.
+
+### Workflows de GitHub Actions
+
+| Workflow | Cuándo corre | Qué hace |
+|---|---|---|
+| **CI** (`ci.yml`) | En cada PR hacia `main` y en cada push a `main` | Restore, build, lint, pruebas unitarias, pruebas de integración, cobertura (mínimo 85%) y `docker build` con prueba del compose. Publica en el PR un comentario con la cobertura. |
+| **Build y pruebas unitarias** (`build-unitarias.yml`) | En cada push a cualquier rama | Solo build y pruebas unitarias, para tener una respuesta rápida mientras se trabaja. |
+
 Los secretos (cadena de conexión, dominio y audience de Auth0) no se versionan. Se configuran con `dotnet user-secrets` o variables de entorno.
 
 ## Convenciones

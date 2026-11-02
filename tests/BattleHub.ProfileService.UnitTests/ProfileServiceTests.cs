@@ -1,10 +1,9 @@
-using ProfileServiceImpl = BattleHub.ProfileService.Api.Services.ProfileService;
 using BattleHub.ProfileService.Api.Data;
 using BattleHub.ProfileService.Api.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
-using Xunit;
+using ProfileServiceImpl = BattleHub.ProfileService.Api.Services.ProfileService;
 
 namespace BattleHub.ProfileService.UnitTests;
 

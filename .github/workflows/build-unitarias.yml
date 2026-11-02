@@ -1,0 +1,37 @@
+# Workflow corto (R-21): solo build y pruebas unitarias, en cada push a cualquier rama.
+# Da una respuesta rápida mientras se trabaja; el workflow completo es ci.yml.
+name: Build y pruebas unitarias
+
+on:
+  push:
+    branches:
+      - "**"
+
+jobs:
+  build-and-unit-tests:
+    name: Build and unit tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Run unit tests
+        run: >
+          dotnet test
+          tests/BattleHub.ProfileService.UnitTests/BattleHub.ProfileService.UnitTests.csproj
+          --configuration Release
+          --no-build

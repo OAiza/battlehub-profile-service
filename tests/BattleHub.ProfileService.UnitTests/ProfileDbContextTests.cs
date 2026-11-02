@@ -1,6 +1,5 @@
 using BattleHub.ProfileService.Api.Data;
 using Microsoft.EntityFrameworkCore;
-using Xunit;
 
 namespace BattleHub.ProfileService.UnitTests;
 
