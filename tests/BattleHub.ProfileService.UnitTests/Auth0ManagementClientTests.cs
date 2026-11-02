@@ -233,4 +233,124 @@ public class Auth0ManagementClientTests
         // Act & Assert
         await Assert.ThrowsAsync<Auth0ManagementException>(() => auth0Client.GetUserEffectivePermissionsAsync("auth0|err-user"));
     }
+
+    [Fact]
+    public async Task GetUserEffectivePermissionsAsync_TimeoutDeAuth0_LanzaAuth0ManagementException()
+    {
+        var options = Options.Create(new Auth0Options
+        {
+            Domain = "test.auth0.com",
+            Management = new Auth0ManagementOptions
+            {
+                ClientId = "client-123",
+                ClientSecret = "secret-xyz"
+            }
+        });
+
+        var handler = new FakeHttpMessageHandler(req =>
+        {
+            if (req.RequestUri!.AbsolutePath == "/oauth/token")
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(JsonSerializer.Serialize(new
+                    {
+                        access_token = "token-1",
+                        expires_in = 3600
+                    }), System.Text.Encoding.UTF8, "application/json")
+                };
+            }
+
+            throw new TaskCanceledException("The request was canceled due to timeout.");
+        });
+
+        var client = new HttpClient(handler);
+        var memoryCache = new MemoryCache(new MemoryCacheOptions());
+        var auth0Client = new Auth0ManagementClient(client, memoryCache, options, NullLogger<Auth0ManagementClient>.Instance);
+
+        await Assert.ThrowsAsync<Auth0ManagementException>(() => auth0Client.GetUserEffectivePermissionsAsync("auth0|timeout-user"));
+    }
+
+    [Fact]
+    public async Task GetUserEffectivePermissionsAsync_JsonMalFormado_LanzaAuth0ManagementException()
+    {
+        var options = Options.Create(new Auth0Options
+        {
+            Domain = "test.auth0.com",
+            Management = new Auth0ManagementOptions
+            {
+                ClientId = "client-123",
+                ClientSecret = "secret-xyz"
+            }
+        });
+
+        var handler = new FakeHttpMessageHandler(req =>
+        {
+            if (req.RequestUri!.AbsolutePath == "/oauth/token")
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("esto no es json", System.Text.Encoding.UTF8, "application/json")
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+
+        var client = new HttpClient(handler);
+        var memoryCache = new MemoryCache(new MemoryCacheOptions());
+        var auth0Client = new Auth0ManagementClient(client, memoryCache, options, NullLogger<Auth0ManagementClient>.Instance);
+
+        await Assert.ThrowsAsync<Auth0ManagementException>(() => auth0Client.GetUserEffectivePermissionsAsync("auth0|bad-json-user"));
+    }
+
+    [Fact]
+    public async Task GetUserEffectivePermissionsAsync_AceptaMatchesCreateDesdeProfileYMatchmaking()
+    {
+        var options = Options.Create(new Auth0Options
+        {
+            Domain = "test.auth0.com",
+            Management = new Auth0ManagementOptions
+            {
+                ClientId = "client-123",
+                ClientSecret = "secret-xyz"
+            }
+        });
+
+        var handler = new FakeHttpMessageHandler(req =>
+        {
+            if (req.RequestUri!.AbsolutePath == "/oauth/token")
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(JsonSerializer.Serialize(new
+                    {
+                        access_token = "token-1",
+                        expires_in = 3600
+                    }), System.Text.Encoding.UTF8, "application/json")
+                };
+            }
+
+            var permissions = new[]
+            {
+                new { permission_name = "matches.create", resource_server_identifier = "https://api.battlehub.local/matchmaking" },
+                new { permission_name = "games.typing.play", resource_server_identifier = "https://api.battlehub.local/typing" }
+            };
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(JsonSerializer.Serialize(permissions), System.Text.Encoding.UTF8, "application/json")
+            };
+        });
+
+        var client = new HttpClient(handler);
+        var memoryCache = new MemoryCache(new MemoryCacheOptions());
+        var auth0Client = new Auth0ManagementClient(client, memoryCache, options, NullLogger<Auth0ManagementClient>.Instance);
+
+        var result = await auth0Client.GetUserEffectivePermissionsAsync("auth0|matchmaking-user");
+
+        Assert.Equal(2, result.Count);
+        Assert.Contains("matches.create", result);
+        Assert.Contains("games.typing.play", result);
+    }
 }

@@ -63,7 +63,10 @@ else
 }
 
 builder.Services.AddMemoryCache();
-builder.Services.AddHttpClient<IAuth0ManagementClient, Auth0ManagementClient>();
+builder.Services.AddHttpClient<IAuth0ManagementClient, Auth0ManagementClient>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
 builder.Services.AddScoped<IProfileService, ProfileService>();
 
 // Configuración de OpenAPI con soporte para tokens JWT Bearer de Auth0

@@ -359,4 +359,15 @@ public class ProfileEndpointTests : IClassFixture<WebApplicationFactory<Program>
         var response = await client.GetAsync("/api/profiles/me/access");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
+
+    [Fact]
+    public async Task GetAccess_ClienteM2M_Responde403()
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Test-UserId", "serv-m2m@clients");
+
+        var response = await client.GetAsync("/api/profiles/me/access");
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+    }
 }

@@ -95,6 +95,7 @@ public class ProfilesController : ControllerBase
     [HttpGet("me/permissions")]
     [ProducesResponseType(typeof(PermissionResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> GetMyPermissions(CancellationToken cancellationToken)
@@ -103,6 +104,16 @@ public class ProfilesController : ControllerBase
         if (string.IsNullOrEmpty(userId))
         {
             return Unauthorized();
+        }
+
+        if (IsServiceClient(userId))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails
+            {
+                Title = "Acceso denegado",
+                Detail = "Los tokens de cliente M2M no representan a un jugador y no pueden consultar permisos.",
+                Status = StatusCodes.Status403Forbidden
+            });
         }
 
         try
@@ -129,6 +140,7 @@ public class ProfilesController : ControllerBase
     [HttpGet("me/games")]
     [ProducesResponseType(typeof(IReadOnlyList<GameResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> GetMyGames(CancellationToken cancellationToken)
     {
@@ -136,6 +148,16 @@ public class ProfilesController : ControllerBase
         if (string.IsNullOrEmpty(userId))
         {
             return Unauthorized();
+        }
+
+        if (IsServiceClient(userId))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails
+            {
+                Title = "Acceso denegado",
+                Detail = "Los tokens de cliente M2M no representan a un jugador y no pueden consultar juegos.",
+                Status = StatusCodes.Status403Forbidden
+            });
         }
 
         try
@@ -152,6 +174,7 @@ public class ProfilesController : ControllerBase
     [HttpGet("me/access")]
     [ProducesResponseType(typeof(UserAccessResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> GetMyAccess(CancellationToken cancellationToken)
     {
@@ -159,6 +182,16 @@ public class ProfilesController : ControllerBase
         if (string.IsNullOrEmpty(userId))
         {
             return Unauthorized();
+        }
+
+        if (IsServiceClient(userId))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails
+            {
+                Title = "Acceso denegado",
+                Detail = "Los tokens de cliente M2M no representan a un jugador y no tienen acceso a este recurso.",
+                Status = StatusCodes.Status403Forbidden
+            });
         }
 
         try
