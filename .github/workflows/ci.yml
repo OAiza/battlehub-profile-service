@@ -145,13 +145,23 @@ jobs:
           echo "La API no respondió en /health"
           exit 1
 
-      - name: Check migration and initial data
+      # Comprueba la migración (con el seed del catálogo) y la generación de datos (R-28).
+      - name: Check migration and generated data
         run: |
-          exit_code=$(docker inspect --format '{{.State.ExitCode}}' "$(docker compose ps --all --quiet migrate)")
-          test "$exit_code" = "0"
-          games=$(docker compose exec -T mysql sh -c 'mysql --user="$MYSQL_USER" --password="$MYSQL_PASSWORD" --database="$MYSQL_DATABASE" --skip-column-names --execute="SELECT COUNT(*) FROM games;"')
-          echo "Juegos cargados: $games"
+          for service in migrate generar-datos; do
+            exit_code=$(docker inspect --format '{{.State.ExitCode}}' "$(docker compose ps --all --quiet "$service")")
+            echo "Servicio $service terminó con código $exit_code"
+            test "$exit_code" = "0"
+          done
+          query() {
+            docker compose exec -T mysql sh -c 'MYSQL_PWD="$MYSQL_PASSWORD" mysql --user="$MYSQL_USER" --database="$MYSQL_DATABASE" --skip-column-names --execute="$0"' "$1"
+          }
+          games=$(query "SELECT COUNT(*) FROM games;")
+          profiles=$(query "SELECT COUNT(*) FROM profiles;")
+          echo "Juegos del catálogo: $games"
+          echo "Perfiles generados: $profiles"
           test "$games" = "3"
+          test "$profiles" -ge 6
 
       - name: Protected endpoint without token returns 401
         run: |

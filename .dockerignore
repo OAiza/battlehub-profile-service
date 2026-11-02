@@ -12,6 +12,6 @@
 .env.*
 docs/
 tests/
-scripts/
+docker/
 Dockerfile
 docker-compose.yml
