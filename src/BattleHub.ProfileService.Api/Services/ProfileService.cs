@@ -8,10 +8,12 @@ namespace BattleHub.ProfileService.Api.Services;
 public class ProfileService : IProfileService
 {
     private readonly ProfileDbContext _context;
+    private readonly IAuth0ManagementClient _auth0ManagementClient;
 
-    public ProfileService(ProfileDbContext context)
+    public ProfileService(ProfileDbContext context, IAuth0ManagementClient auth0ManagementClient)
     {
         _context = context;
+        _auth0ManagementClient = auth0ManagementClient;
     }
 
     public async Task<(ProfileResponse Profile, bool Created)> SyncProfileAsync(
@@ -44,23 +46,8 @@ public class ProfileService : IProfileService
                 LastLoginAt = now
             };
 
-            // Solo los permisos básicos de jugador, nunca todos los que existan en la tabla.
-            // El catálogo de permisos es pequeño: se filtra en memoria para no depender de
-            // cómo traduzca cada proveedor un Contains sobre una lista.
-            var defaultPermissions = (await _context.Permissions.ToListAsync(cancellationToken))
-                .Where(p => PlayerPermissions.Default.Contains(p.Code))
-                .ToList();
-            if (defaultPermissions.Count == 0)
-            {
-                defaultPermissions = PlayerPermissions.Default.Select(code => new Permission { Code = code, Description = code }).ToList();
-                _context.Permissions.AddRange(defaultPermissions);
-            }
-
-            foreach (var perm in defaultPermissions)
-            {
-                profile.Permissions.Add(perm);
-            }
-
+            // NOTA R-47 / R-48: Ya no se asignan permisos de juegos por defecto en MySQL.
+            // Los permisos provienen exclusivamente de Auth0 Management API.
             _context.Profiles.Add(profile);
         }
         else
@@ -131,7 +118,6 @@ public class ProfileService : IProfileService
     {
         var profile = await _context.Profiles
             .AsNoTracking()
-            .Include(p => p.Permissions)
             .FirstOrDefaultAsync(p => p.Id == userId, cancellationToken);
 
         if (profile == null)
@@ -139,9 +125,11 @@ public class ProfileService : IProfileService
             return null;
         }
 
+        var effectivePermissions = await _auth0ManagementClient.GetUserEffectivePermissionsAsync(userId, cancellationToken);
+
         return new PermissionResponse
         {
-            Permissions = profile.Permissions.Select(p => p.Code).ToList()
+            Permissions = effectivePermissions.ToList()
         };
     }
 
@@ -149,7 +137,6 @@ public class ProfileService : IProfileService
     {
         var profile = await _context.Profiles
             .AsNoTracking()
-            .Include(p => p.Permissions)
             .FirstOrDefaultAsync(p => p.Id == userId, cancellationToken);
 
         if (profile == null)
@@ -157,7 +144,8 @@ public class ProfileService : IProfileService
             return Array.Empty<GameResponse>();
         }
 
-        var userPermissions = profile.Permissions.Select(p => p.Code).ToHashSet();
+        var effectivePermissions = await _auth0ManagementClient.GetUserEffectivePermissionsAsync(userId, cancellationToken);
+        var userPermissions = effectivePermissions.ToHashSet(StringComparer.Ordinal);
 
         var games = await _context.Games
             .AsNoTracking()
@@ -174,5 +162,37 @@ public class ProfileService : IProfileService
             })
             .ToList();
     }
-}
 
+    public async Task<UserAccessResponse> GetUserAccessAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            throw new ArgumentException("El userId no puede ser nulo ni vacío.", nameof(userId));
+        }
+
+        var effectivePermissions = await _auth0ManagementClient.GetUserEffectivePermissionsAsync(userId, cancellationToken);
+        var userPermissions = effectivePermissions.ToHashSet(StringComparer.Ordinal);
+
+        var games = await _context.Games
+            .AsNoTracking()
+            .Where(g => g.Enabled)
+            .ToListAsync(cancellationToken);
+
+        var userGames = games
+            .Where(g => userPermissions.Contains(g.RequiredPermission))
+            .Select(g => new GameResponse
+            {
+                GameType = g.GameType,
+                Name = g.Name,
+                RequiredPermission = g.RequiredPermission
+            })
+            .ToList();
+
+        return new UserAccessResponse
+        {
+            UserId = userId,
+            Permissions = effectivePermissions,
+            Games = userGames
+        };
+    }
+}

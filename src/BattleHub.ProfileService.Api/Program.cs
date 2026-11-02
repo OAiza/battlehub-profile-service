@@ -62,6 +62,8 @@ else
         options.UseInMemoryDatabase(inMemoryDbName));
 }
 
+builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient<IAuth0ManagementClient, Auth0ManagementClient>();
 builder.Services.AddScoped<IProfileService, ProfileService>();
 
 // Configuración de OpenAPI con soporte para tokens JWT Bearer de Auth0

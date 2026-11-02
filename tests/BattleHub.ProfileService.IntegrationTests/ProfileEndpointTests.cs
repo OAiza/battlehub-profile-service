@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using BattleHub.ProfileService.Api.Dtos;
+using BattleHub.ProfileService.Api.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
@@ -82,6 +83,8 @@ public class ProfileEndpointTests : IClassFixture<WebApplicationFactory<Program>
 
             builder.ConfigureServices(services =>
             {
+                services.AddHttpContextAccessor();
+                services.AddSingleton<IAuth0ManagementClient, TestAuth0ManagementClient>();
                 services.AddAuthentication(options =>
                 {
                     options.DefaultAuthenticateScheme = "Test";
@@ -90,7 +93,6 @@ public class ProfileEndpointTests : IClassFixture<WebApplicationFactory<Program>
                 .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>("Test", options => { });
             });
         });
-
     }
 
     [Fact]
@@ -269,5 +271,92 @@ public class ProfileEndpointTests : IClassFixture<WebApplicationFactory<Program>
         var respuestaAjena = await client.SendAsync(ajeno);
 
         Assert.False(respuestaAjena.Headers.Contains("Access-Control-Allow-Origin"));
+    }
+
+    // --- NUEVAS PRUEBAS DE ACCESO R-47 / R-48 / R-49 ---
+
+    [Fact]
+    public async Task GetAccess_UsuarioSinPermisos_Responde200ConListasVacias()
+    {
+        var client = _factory.CreateClient();
+        var userId = "auth0|user-sin-juegos";
+        client.DefaultRequestHeaders.Add("X-Test-UserId", userId);
+        client.DefaultRequestHeaders.Add("X-Test-Zero-Permissions", "true");
+
+        var response = await client.GetAsync("/api/profiles/me/access");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var access = await response.Content.ReadFromJsonAsync<UserAccessResponse>();
+        Assert.NotNull(access);
+        Assert.Equal(userId, access.UserId);
+        Assert.Empty(access.Permissions);
+        Assert.Empty(access.Games);
+    }
+
+    [Fact]
+    public async Task GetAccess_UsuarioConUnJuego_RespondeSoloEseJuego()
+    {
+        var client = _factory.CreateClient();
+        var userId = "auth0|user-solo-typing";
+        client.DefaultRequestHeaders.Add("X-Test-UserId", userId);
+        client.DefaultRequestHeaders.Add("X-Test-Permissions", "matches.create,games.typing.play");
+
+        var response = await client.GetAsync("/api/profiles/me/access");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var access = await response.Content.ReadFromJsonAsync<UserAccessResponse>();
+        Assert.NotNull(access);
+        Assert.Equal(userId, access.UserId);
+        Assert.Equal(2, access.Permissions.Count);
+        Assert.Contains("matches.create", access.Permissions);
+        Assert.Contains("games.typing.play", access.Permissions);
+
+        Assert.Single(access.Games);
+        Assert.Equal("typing", access.Games[0].GameType);
+        Assert.Equal("Typing Battle", access.Games[0].Name);
+    }
+
+    [Fact]
+    public async Task GetAccess_UsuarioConTresJuegos_RespondeLosTresJuegos()
+    {
+        var client = _factory.CreateClient();
+        var userId = "auth0|user-tres-juegos";
+        client.DefaultRequestHeaders.Add("X-Test-UserId", userId);
+        client.DefaultRequestHeaders.Add("X-Test-Permissions", "matches.create,games.typing.play,games.trivia.play,games.memory.play");
+
+        var response = await client.GetAsync("/api/profiles/me/access");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var access = await response.Content.ReadFromJsonAsync<UserAccessResponse>();
+        Assert.NotNull(access);
+        Assert.Equal(userId, access.UserId);
+        Assert.Equal(4, access.Permissions.Count);
+        Assert.Equal(3, access.Games.Count);
+        Assert.Contains(access.Games, g => g.GameType == "typing");
+        Assert.Contains(access.Games, g => g.GameType == "trivia");
+        Assert.Contains(access.Games, g => g.GameType == "memory");
+    }
+
+    [Fact]
+    public async Task GetAccess_FalloAuth0_Responde503ProblemDetailsSinConcederJuegos()
+    {
+        var client = _factory.CreateClient();
+        var userId = "auth0|user-auth0-down";
+        client.DefaultRequestHeaders.Add("X-Test-UserId", userId);
+        client.DefaultRequestHeaders.Add("X-Test-Auth0-Fail", "true");
+
+        var response = await client.GetAsync("/api/profiles/me/access");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+    }
+
+    [Fact]
+    public async Task GetAccess_NoAutenticado_Responde401()
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Test-Anonymous", "true");
+
+        var response = await client.GetAsync("/api/profiles/me/access");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 }

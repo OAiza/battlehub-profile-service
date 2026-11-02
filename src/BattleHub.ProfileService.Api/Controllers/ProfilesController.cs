@@ -36,12 +36,14 @@ public class ProfilesController : ControllerBase
             });
         }
 
+        // Un cliente M2M autentica un servicio (por ejemplo, los juegos cuando se comunican entre
+        // sí), no un jugador humano. No debe registrarse como perfil en el sistema.
         if (IsServiceClient(userId))
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails
             {
-                Title = "Prohibido",
-                Detail = "Los clientes de servicio (M2M) no pueden registrarse como jugadores.",
+                Title = "Acceso denegado",
+                Detail = "Los tokens de cliente M2M (client credentials) no representan a un jugador y no pueden registrarse como perfil.",
                 Status = StatusCodes.Status403Forbidden
             });
         }
@@ -94,6 +96,7 @@ public class ProfilesController : ControllerBase
     [ProducesResponseType(typeof(PermissionResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> GetMyPermissions(CancellationToken cancellationToken)
     {
         var userId = GetUserId();
@@ -102,23 +105,31 @@ public class ProfilesController : ControllerBase
             return Unauthorized();
         }
 
-        var permissions = await _profileService.GetPermissionsAsync(userId, cancellationToken);
-        if (permissions == null)
+        try
         {
-            return NotFound(new ProblemDetails
+            var permissions = await _profileService.GetPermissionsAsync(userId, cancellationToken);
+            if (permissions == null)
             {
-                Title = "Perfil no encontrado",
-                Detail = $"No existe un perfil local para el usuario '{userId}'.",
-                Status = StatusCodes.Status404NotFound
-            });
-        }
+                return NotFound(new ProblemDetails
+                {
+                    Title = "Perfil no encontrado",
+                    Detail = $"No existe un perfil local para el usuario '{userId}'.",
+                    Status = StatusCodes.Status404NotFound
+                });
+            }
 
-        return Ok(permissions);
+            return Ok(permissions);
+        }
+        catch (Auth0ManagementException)
+        {
+            return CreateServiceUnavailableProblem();
+        }
     }
 
     [HttpGet("me/games")]
     [ProducesResponseType(typeof(IReadOnlyList<GameResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> GetMyGames(CancellationToken cancellationToken)
     {
         var userId = GetUserId();
@@ -127,14 +138,57 @@ public class ProfilesController : ControllerBase
             return Unauthorized();
         }
 
-        var games = await _profileService.GetEnabledGamesForUserAsync(userId, cancellationToken);
-        return Ok(games);
+        try
+        {
+            var games = await _profileService.GetEnabledGamesForUserAsync(userId, cancellationToken);
+            return Ok(games);
+        }
+        catch (Auth0ManagementException)
+        {
+            return CreateServiceUnavailableProblem();
+        }
+    }
+
+    [HttpGet("me/access")]
+    [ProducesResponseType(typeof(UserAccessResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> GetMyAccess(CancellationToken cancellationToken)
+    {
+        var userId = GetUserId();
+        if (string.IsNullOrEmpty(userId))
+        {
+            return Unauthorized();
+        }
+
+        try
+        {
+            var access = await _profileService.GetUserAccessAsync(userId, cancellationToken);
+            return Ok(access);
+        }
+        catch (Auth0ManagementException)
+        {
+            return CreateServiceUnavailableProblem();
+        }
     }
 
     private string? GetUserId()
     {
         return User.FindFirst(ClaimTypes.NameIdentifier)?.Value
             ?? User.FindFirst("sub")?.Value;
+    }
+
+    private static ObjectResult CreateServiceUnavailableProblem()
+    {
+        return new ObjectResult(new ProblemDetails
+        {
+            Title = "Servicio no disponible",
+            Detail = "No se pudo consultar el servicio de identidad de Auth0 para verificar los permisos del usuario.",
+            Status = StatusCodes.Status503ServiceUnavailable
+        })
+        {
+            StatusCode = StatusCodes.Status503ServiceUnavailable
+        };
     }
 
     // Auth0 emite los tokens M2M (client credentials) con gty = "client-credentials"
@@ -147,4 +201,3 @@ public class ProfilesController : ControllerBase
 }
 
 public record SyncProfileRequest(string? DisplayName = null, string? Email = null);
-

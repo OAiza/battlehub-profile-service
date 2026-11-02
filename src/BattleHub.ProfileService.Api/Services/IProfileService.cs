@@ -21,5 +21,8 @@ public interface IProfileService
     Task<IReadOnlyList<GameResponse>> GetEnabledGamesForUserAsync(
         string userId,
         CancellationToken cancellationToken = default);
-}
 
+    Task<UserAccessResponse> GetUserAccessAsync(
+        string userId,
+        CancellationToken cancellationToken = default);
+}
