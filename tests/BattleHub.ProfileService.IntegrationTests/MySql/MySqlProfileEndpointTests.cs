@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using BattleHub.ProfileService.Api.Dtos;
+using BattleHub.ProfileService.Api.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -111,6 +112,8 @@ public class MySqlProfileEndpointTests : IClassFixture<MySqlDatabaseFixture>
 
             builder.ConfigureServices(services =>
             {
+                services.AddHttpContextAccessor();
+                services.AddSingleton<IAuth0ManagementClient, TestAuth0ManagementClient>();
                 services.AddAuthentication(options =>
                 {
                     options.DefaultAuthenticateScheme = "Test";

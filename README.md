@@ -4,7 +4,7 @@ Servicio **Identity & Profile** del proyecto BattleHub, a cargo del **Equipo 1**
 
 El Shell inicia sesión con Auth0 y envía el token del usuario a este servicio, que guarda su perfil local y responde qué juegos y permisos tiene habilitados. El Equipo 1 también crea y administra el tenant de Auth0 del proyecto.
 
-En la Etapa 2, los permisos pasan a leerse de Auth0 mediante una aplicación M2M del Profile Service, con un endpoint unificado `GET /api/profiles/me/access` (en desarrollo).
+En la Etapa 2, los permisos pasan a leerse de Auth0 mediante una aplicación M2M del Profile Service, con un endpoint unificado `GET /api/profiles/me/access` (R-47, R-48).
 
 ## Stack
 
@@ -24,8 +24,9 @@ Base URL: `/api/profiles`. Todos los endpoints exigen `Authorization: Bearer <to
 |---|---|---|
 | POST | `/api/profiles/sync` | Crea el perfil local si no existe o lo actualiza. Responde `201` la primera vez y `200` después. Rechaza con `403` los tokens de máquina (M2M). |
 | GET | `/api/profiles/me` | Perfil del usuario del token. `404` si todavía no hizo `sync`. |
-| GET | `/api/profiles/me/permissions` | Códigos de permiso del usuario. |
-| GET | `/api/profiles/me/games` | Juegos habilitados para el usuario. |
+| GET | `/api/profiles/me/permissions` | Códigos de permiso del usuario (consultados desde Auth0). |
+| GET | `/api/profiles/me/games` | Juegos habilitados para el usuario (cruzando catálogo con permisos de Auth0). |
+| GET | `/api/profiles/me/access` | Respuesta unificada de acceso: JSON con `userId`, `permissions` y `games` habilitados para el usuario a partir de Auth0 Management API (R-47, R-48). |
 | GET | `/health` | Estado del servicio. No requiere token. |
 
 - Las fechas van siempre en UTC, en formato ISO-8601 con sufijo `Z` (por ejemplo `2026-09-02T20:00:00Z`).
@@ -90,12 +91,13 @@ curl -X POST http://localhost:5220/api/profiles/sync \
   -d '{"displayName": "Ana"}'
 ```
 
-Consultar el perfil, los permisos y los juegos:
+Consultar el perfil, los permisos, los juegos y el acceso unificado:
 
 ```bash
 curl http://localhost:5220/api/profiles/me -H "Authorization: Bearer $TOKEN"
 curl http://localhost:5220/api/profiles/me/permissions -H "Authorization: Bearer $TOKEN"
 curl http://localhost:5220/api/profiles/me/games -H "Authorization: Bearer $TOKEN"
+curl http://localhost:5220/api/profiles/me/access -H "Authorization: Bearer $TOKEN"
 ```
 
 Sin token, la respuesta es `401`:
@@ -116,6 +118,9 @@ Toda la configuración llega por variables de entorno. `docker compose` las toma
 | `MYSQL_PASSWORD` | parte de `ConnectionStrings__DefaultConnection` | Contraseña de ese usuario. |
 | `AUTH0_DOMAIN` | `Auth0__Domain` | Dominio del tenant de Auth0. |
 | `AUTH0_AUDIENCE` | `Auth0__Audience` | Identifier de la API en Auth0 con el que se emiten los tokens que acepta el servicio. |
+| `AUTH0_MGMT_CLIENT_ID` | `Auth0__Management__ClientId` | Client ID de la aplicación Machine-to-Machine de Profile Service para consultar Auth0 Management API (R-47). |
+| `AUTH0_MGMT_CLIENT_SECRET` | `Auth0__Management__ClientSecret` | Client Secret de la aplicación Machine-to-Machine. Se guarda en `.env` (nunca se versiona). |
+| `AUTH0_MGMT_AUDIENCE` | `Auth0__Management__Audience` | Audience de Auth0 Management API (`https://<AUTH0_DOMAIN>/api/v2/`). Opcional. |
 | `CORS_ORIGIN` | `Cors__Origins__0` | Origen del Shell en local (por defecto `http://localhost:4000`). |
 | `CORS_ORIGIN_PUBLISHED` | `Cors__Origins__1` | Origen del Shell publicado. Opcional. |
 | `HTTPS_REDIRECT` | `Https__Redirect` | Redirección a HTTPS. `false` mientras la API solo escuche HTTP, porque el navegador no acepta redirecciones en la petición previa de CORS. |
@@ -147,6 +152,7 @@ El compose también define `DatabaseProvider=MySQL`. Si la API se publica detrá
 | Migraciones con `--migrate` en un servicio aparte | La API no modifica el esquema al arrancar; aplicar migraciones es un paso controlado. |
 | Generación de datos con un script SQL independiente | Cumple R-28: tras `docker compose up` hay datos, sin mezclar el seed ni el código de la API. |
 | Validación completa del JWT de Auth0 | Se valida emisor, audiencia, firma y vigencia; la identidad sale siempre del `sub` del token. |
+| Consulta de permisos vía Auth0 Management API (M2M) y endpoint `/me/access` | Cumple R-47 y R-48: los permisos se gestionan en Auth0 y Profile Service los consulta con su propia credencial M2M con `read:users`. El Shell consume un único endpoint con `userId`, `permissions` y `games`. Si Auth0 falla, responde 503 sin conceder acceso por defecto. |
 | `/sync` rechaza tokens M2M | Un cliente de máquina no debe registrarse como jugador. |
 | Errores con ProblemDetails | Formato estándar de ASP.NET Core, igual en todos los endpoints. |
 | CORS con lista explícita de orígenes | Solo el Shell puede llamar a la API desde el navegador. |

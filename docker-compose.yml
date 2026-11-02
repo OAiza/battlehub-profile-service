@@ -65,6 +65,9 @@ services:
       ConnectionStrings__DefaultConnection: Server=mysql;Port=3306;Database=${MYSQL_DATABASE};User=${MYSQL_USER};Password=${MYSQL_PASSWORD};
       Auth0__Domain: ${AUTH0_DOMAIN:?Defina AUTH0_DOMAIN en .env}
       Auth0__Audience: ${AUTH0_AUDIENCE:?Defina AUTH0_AUDIENCE en .env}
+      Auth0__Management__ClientId: ${AUTH0_MGMT_CLIENT_ID:-}
+      Auth0__Management__ClientSecret: ${AUTH0_MGMT_CLIENT_SECRET:-}
+      Auth0__Management__Audience: ${AUTH0_MGMT_AUDIENCE:-}
       Cors__Origins__0: ${CORS_ORIGIN:-http://localhost:4000}
       Cors__Origins__1: ${CORS_ORIGIN_PUBLISHED:-}
       # El contenedor solo escucha HTTP: sin redirección para no romper el CORS del Shell.

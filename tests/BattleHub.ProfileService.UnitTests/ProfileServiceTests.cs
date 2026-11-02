@@ -1,8 +1,10 @@
 using BattleHub.ProfileService.Api.Data;
 using BattleHub.ProfileService.Api.Models;
+using BattleHub.ProfileService.Api.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
+using Moq;
 using ProfileServiceImpl = BattleHub.ProfileService.Api.Services.ProfileService;
 
 namespace BattleHub.ProfileService.UnitTests;
@@ -18,17 +20,6 @@ public class ProfileServiceTests
 
         var context = new ProfileDbContext(options);
 
-        // Aseguramos que la base en memoria tenga los permisos y juegos seed
-        if (!context.Permissions.Any())
-        {
-            context.Permissions.AddRange(
-                new Permission { Code = "matches.create", Description = "Crear salas de partidas" },
-                new Permission { Code = "games.typing.play", Description = "Jugar a Typing Battle" },
-                new Permission { Code = "games.trivia.play", Description = "Jugar a Trivia Battle" },
-                new Permission { Code = "games.memory.play", Description = "Jugar a Memory Match" }
-            );
-        }
-
         if (!context.Games.Any())
         {
             context.Games.AddRange(
@@ -42,12 +33,22 @@ public class ProfileServiceTests
         return context;
     }
 
+    private static Mock<IAuth0ManagementClient> CreateAuth0Mock(IReadOnlyList<string>? permissions = null)
+    {
+        var mock = new Mock<IAuth0ManagementClient>();
+        var perms = permissions ?? new[] { "matches.create", "games.typing.play", "games.trivia.play", "games.memory.play" };
+        mock.Setup(c => c.GetUserEffectivePermissionsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(perms);
+        return mock;
+    }
+
     [Fact]
-    public async Task SyncProfileAsync_NuevoUsuario_CreaPerfilConPermisosPorDefecto()
+    public async Task SyncProfileAsync_NuevoUsuario_CreaPerfilSinConcederPermisosLocalesEnMySql()
     {
         // Arrange
-        using var context = CreateInMemoryContext(nameof(SyncProfileAsync_NuevoUsuario_CreaPerfilConPermisosPorDefecto));
-        var service = new ProfileServiceImpl(context);
+        using var context = CreateInMemoryContext(nameof(SyncProfileAsync_NuevoUsuario_CreaPerfilSinConcederPermisosLocalesEnMySql));
+        var auth0Mock = CreateAuth0Mock();
+        var service = new ProfileServiceImpl(context, auth0Mock.Object);
 
         // Act
         var (profile, created) = await service.SyncProfileAsync("auth0|12345", "Francisco", "francisco@ejemplo.com");
@@ -60,7 +61,8 @@ public class ProfileServiceTests
 
         var savedProfile = await context.Profiles.Include(p => p.Permissions).FirstOrDefaultAsync(p => p.Id == "auth0|12345");
         Assert.NotNull(savedProfile);
-        Assert.Equal(4, savedProfile.Permissions.Count);
+        // R-47 / R-48: Los permisos no se inventan ni se asignan por defecto en MySQL.
+        Assert.Empty(savedProfile.Permissions);
     }
 
     [Fact]
@@ -68,7 +70,8 @@ public class ProfileServiceTests
     {
         // Arrange
         using var context = CreateInMemoryContext(nameof(SyncProfileAsync_UsuarioExistente_ActualizaSinDuplicar));
-        var service = new ProfileServiceImpl(context);
+        var auth0Mock = CreateAuth0Mock();
+        var service = new ProfileServiceImpl(context, auth0Mock.Object);
 
         await service.SyncProfileAsync("auth0|999", "NombreAntiguo", "viejo@mail.com");
 
@@ -89,7 +92,8 @@ public class ProfileServiceTests
     {
         // Arrange
         using var context = CreateInMemoryContext(nameof(GetProfileAsync_UsuarioExistente_DevuelvePerfil));
-        var service = new ProfileServiceImpl(context);
+        var auth0Mock = CreateAuth0Mock();
+        var service = new ProfileServiceImpl(context, auth0Mock.Object);
 
         await service.SyncProfileAsync("auth0|abc", "Usuario ABC", "abc@mail.com");
 
@@ -107,7 +111,8 @@ public class ProfileServiceTests
     {
         // Arrange
         using var context = CreateInMemoryContext(nameof(GetProfileAsync_UsuarioInexistente_DevuelveNull));
-        var service = new ProfileServiceImpl(context);
+        var auth0Mock = CreateAuth0Mock();
+        var service = new ProfileServiceImpl(context, auth0Mock.Object);
 
         // Act
         var result = await service.GetProfileAsync("auth0|inexistente");
@@ -117,11 +122,12 @@ public class ProfileServiceTests
     }
 
     [Fact]
-    public async Task GetPermissionsAsync_DevuelveCodigosDePermisos()
+    public async Task GetPermissionsAsync_ConsultaAuth0ManagementClient()
     {
         // Arrange
-        using var context = CreateInMemoryContext(nameof(GetPermissionsAsync_DevuelveCodigosDePermisos));
-        var service = new ProfileServiceImpl(context);
+        using var context = CreateInMemoryContext(nameof(GetPermissionsAsync_ConsultaAuth0ManagementClient));
+        var auth0Mock = CreateAuth0Mock(new[] { "matches.create", "games.typing.play" });
+        var service = new ProfileServiceImpl(context, auth0Mock.Object);
 
         await service.SyncProfileAsync("auth0|user1", "User 1", null);
 
@@ -130,29 +136,20 @@ public class ProfileServiceTests
 
         // Assert
         Assert.NotNull(permissions);
+        Assert.Equal(2, permissions.Permissions.Count);
         Assert.Contains("matches.create", permissions.Permissions);
         Assert.Contains("games.typing.play", permissions.Permissions);
     }
 
     [Fact]
-    public async Task GetEnabledGamesForUserAsync_DevuelveJuegosSegunPermisos()
+    public async Task GetEnabledGamesForUserAsync_DevuelveJuegosSegunPermisosDeAuth0()
     {
         // Arrange
-        using var context = CreateInMemoryContext(nameof(GetEnabledGamesForUserAsync_DevuelveJuegosSegunPermisos));
-        var service = new ProfileServiceImpl(context);
+        using var context = CreateInMemoryContext(nameof(GetEnabledGamesForUserAsync_DevuelveJuegosSegunPermisosDeAuth0));
+        var auth0Mock = CreateAuth0Mock(new[] { "games.typing.play" });
+        var service = new ProfileServiceImpl(context, auth0Mock.Object);
 
-        // Creamos perfil con solo un permiso de juego
-        var typingPerm = await context.Permissions.FirstAsync(p => p.Code == "games.typing.play");
-        var user = new Profile
-        {
-            Id = "auth0|solo_typing",
-            DisplayName = "Typing Only",
-            CreatedAt = DateTime.UtcNow,
-            LastLoginAt = DateTime.UtcNow,
-            Permissions = new List<Permission> { typingPerm }
-        };
-        context.Profiles.Add(user);
-        await context.SaveChangesAsync();
+        await service.SyncProfileAsync("auth0|solo_typing", "Typing Only", null);
 
         // Act
         var games = await service.GetEnabledGamesForUserAsync("auth0|solo_typing");
@@ -163,47 +160,77 @@ public class ProfileServiceTests
     }
 
     [Fact]
-    public async Task SyncProfileAsync_NuevoUsuario_NoRecibePermisosFueraDeLaListaBasica()
+    public async Task GetUserAccessAsync_UsuarioSinPermisos_DevuelveListasVacias()
     {
         // Arrange
-        using var context = CreateInMemoryContext(nameof(SyncProfileAsync_NuevoUsuario_NoRecibePermisosFueraDeLaListaBasica));
-        context.Permissions.Add(new Permission { Code = "reports.review", Description = "Revisar denuncias" });
-        await context.SaveChangesAsync();
-        var service = new ProfileServiceImpl(context);
+        using var context = CreateInMemoryContext(nameof(GetUserAccessAsync_UsuarioSinPermisos_DevuelveListasVacias));
+        var auth0Mock = CreateAuth0Mock(Array.Empty<string>());
+        var service = new ProfileServiceImpl(context, auth0Mock.Object);
 
         // Act
-        await service.SyncProfileAsync("auth0|nuevo-jugador", "Jugador", null);
+        var access = await service.GetUserAccessAsync("auth0|zero-user");
 
         // Assert
-        var permissions = await service.GetPermissionsAsync("auth0|nuevo-jugador");
-        Assert.NotNull(permissions);
-        Assert.DoesNotContain("reports.review", permissions.Permissions);
-        Assert.Equal(
-            new[] { "games.memory.play", "games.trivia.play", "games.typing.play", "matches.create" },
-            permissions.Permissions.OrderBy(code => code));
+        Assert.NotNull(access);
+        Assert.Equal("auth0|zero-user", access.UserId);
+        Assert.Empty(access.Permissions);
+        Assert.Empty(access.Games);
     }
 
     [Fact]
-    public async Task SyncProfileAsync_UsuarioExistente_NoRecuperaPermisosRetirados()
+    public async Task GetUserAccessAsync_UsuarioConUnJuego_DevuelveSoloEseJuego()
     {
         // Arrange
-        using var context = CreateInMemoryContext(nameof(SyncProfileAsync_UsuarioExistente_NoRecuperaPermisosRetirados));
-        var service = new ProfileServiceImpl(context);
-        await service.SyncProfileAsync("auth0|sancionado", "Sancionado", null);
-
-        var profile = await context.Profiles.Include(p => p.Permissions).FirstAsync(p => p.Id == "auth0|sancionado");
-        profile.Permissions.Remove(profile.Permissions.First(p => p.Code == "matches.create"));
-        await context.SaveChangesAsync();
+        using var context = CreateInMemoryContext(nameof(GetUserAccessAsync_UsuarioConUnJuego_DevuelveSoloEseJuego));
+        var auth0Mock = CreateAuth0Mock(new[] { "matches.create", "games.typing.play" });
+        var service = new ProfileServiceImpl(context, auth0Mock.Object);
 
         // Act
-        var (_, created) = await service.SyncProfileAsync("auth0|sancionado", "Sancionado", null);
+        var access = await service.GetUserAccessAsync("auth0|user-typing");
 
         // Assert
-        Assert.False(created);
-        var permissions = await service.GetPermissionsAsync("auth0|sancionado");
-        Assert.NotNull(permissions);
-        Assert.DoesNotContain("matches.create", permissions.Permissions);
-        Assert.Equal(3, permissions.Permissions.Count);
+        Assert.NotNull(access);
+        Assert.Equal("auth0|user-typing", access.UserId);
+        Assert.Equal(2, access.Permissions.Count);
+        Assert.Single(access.Games);
+        Assert.Equal("typing", access.Games[0].GameType);
+        Assert.Equal("Typing Battle", access.Games[0].Name);
+    }
+
+    [Fact]
+    public async Task GetUserAccessAsync_UsuarioConTresJuegos_DevuelveLosTresJuegos()
+    {
+        // Arrange
+        using var context = CreateInMemoryContext(nameof(GetUserAccessAsync_UsuarioConTresJuegos_DevuelveLosTresJuegos));
+        var auth0Mock = CreateAuth0Mock(new[] { "matches.create", "games.typing.play", "games.trivia.play", "games.memory.play" });
+        var service = new ProfileServiceImpl(context, auth0Mock.Object);
+
+        // Act
+        var access = await service.GetUserAccessAsync("auth0|user-all-games");
+
+        // Assert
+        Assert.NotNull(access);
+        Assert.Equal("auth0|user-all-games", access.UserId);
+        Assert.Equal(4, access.Permissions.Count);
+        Assert.Equal(3, access.Games.Count);
+        Assert.Contains(access.Games, g => g.GameType == "typing");
+        Assert.Contains(access.Games, g => g.GameType == "trivia");
+        Assert.Contains(access.Games, g => g.GameType == "memory");
+    }
+
+    [Fact]
+    public async Task GetUserAccessAsync_FalloDeAuth0_PropagaExcepcion()
+    {
+        // Arrange
+        using var context = CreateInMemoryContext(nameof(GetUserAccessAsync_FalloDeAuth0_PropagaExcepcion));
+        var auth0Mock = new Mock<IAuth0ManagementClient>();
+        auth0Mock.Setup(c => c.GetUserEffectivePermissionsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Auth0ManagementException("Auth0 no responde"));
+
+        var service = new ProfileServiceImpl(context, auth0Mock.Object);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<Auth0ManagementException>(() => service.GetUserAccessAsync("auth0|failed-user"));
     }
 
     [Fact]
@@ -214,19 +241,11 @@ public class ProfileServiceTests
         var databaseName = nameof(SyncProfileAsync_PerfilCreadoEnParalelo_DevuelveElExistenteSinDuplicar);
         var root = new InMemoryDatabaseRoot();
 
-        using (var seedContext = new ProfileDbContext(CreateOptions(databaseName, root)))
-        {
-            seedContext.Permissions.AddRange(
-                new Permission { Code = "matches.create", Description = "Crear salas de partidas" },
-                new Permission { Code = "games.typing.play", Description = "Jugar a Typing Battle" },
-                new Permission { Code = "games.trivia.play", Description = "Jugar a Trivia Battle" },
-                new Permission { Code = "games.memory.play", Description = "Jugar a Memory Match" });
-            seedContext.SaveChanges();
-        }
+        var auth0Mock = CreateAuth0Mock();
 
         var interceptor = new PerfilCreadoEnParaleloInterceptor(() => new ProfileDbContext(CreateOptions(databaseName, root)), userId);
         using var context = new ProfileDbContext(CreateOptions(databaseName, root, interceptor));
-        var service = new ProfileServiceImpl(context);
+        var service = new ProfileServiceImpl(context, auth0Mock.Object);
 
         // Act
         var (profile, created) = await service.SyncProfileAsync(userId, "Francisco", null);
@@ -256,9 +275,6 @@ public class ProfileServiceTests
         return builder.Options;
     }
 
-    // Simula la carrera tal como la reporta MySQL: otra llamada inserta el perfil primero y
-    // el INSERT de esta falla por llave duplicada, que EF Core envuelve en DbUpdateException.
-    // (El proveedor en memoria lanzaría ArgumentException, que no representa al motor real.)
     private sealed class PerfilCreadoEnParaleloInterceptor(Func<ProfileDbContext> createOtherContext, string userId)
         : SaveChangesInterceptor
     {
