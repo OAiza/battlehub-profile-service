@@ -54,7 +54,7 @@ Requisito: [Docker Desktop](https://www.docker.com/products/docker-desktop/), o 
    | Servicio | Qué hace |
    |---|---|
    | `mysql` | MySQL 8.4, con los datos en el volumen `profile-mysql-data`. |
-   | `migrate` | Aplica las migraciones, que incluyen el catálogo de juegos y los permisos base (seed), y termina. |
+   | `migrate` | Aplica las migraciones, que incluyen el catálogo de juegos (seed), y termina. |
    | `generar-datos` | Ejecuta `docker/datos/generar-datos.sql`, que inserta perfiles de ejemplo, y termina. |
    | `api` | La API, en `http://localhost:5220`. Arranca solo cuando lo anterior terminó bien. |
 
@@ -73,6 +73,23 @@ Requisito: [Docker Desktop](https://www.docker.com/products/docker-desktop/), o 
    ```
 
 No hay scripts de arranque: el único comando para levantar el servicio es `docker compose up`.
+
+### Si ya habías levantado el compose antes
+
+El modelo de datos cambió: las claves primarias pasaron a enteras y desaparecieron las tablas de permisos. **Un volumen creado con el esquema anterior hace fallar el servicio `migrate`**, porque intenta crear la tabla `profiles` y esa tabla ya existe con la forma vieja. En los logs se ve así:
+
+```
+migrate-1  | ... Table 'profiles' already exists
+```
+
+No es un error del código: es el volumen. Se resuelve borrándolo antes de volver a levantar:
+
+```bash
+docker compose down -v
+docker compose up --build
+```
+
+Se puede borrar sin reparos: en ese volumen solo hay el catálogo de juegos y los perfiles de ejemplo que genera `docker/datos/generar-datos.sql`, y los dos se vuelven a crear en cada arranque.
 
 ## Ejemplos de llamadas con curl
 
@@ -133,6 +150,14 @@ Toda la configuración llega por variables de entorno. `docker compose` las toma
 El compose también define `DatabaseProvider=MySQL`. Si la API se publica detrás de un proxy que maneja el HTTPS, agregue `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true`.
 
 **La API no arranca si falta una variable obligatoria** (R-09): no hay valores por defecto escritos en el código, y el error dice qué variable falta. Es deliberado — un dominio o una audiencia de relleno harían que el servicio rechazara todos los tokens del tenant real, y una API de juego sin configurar dejaría ese juego invisible para todos los usuarios sin dar ningún error.
+
+#### Por qué las credenciales del M2M son la excepción
+
+`AUTH0_MGMT_CLIENT_ID` y `AUTH0_MGMT_CLIENT_SECRET` **no impiden arrancar**, a propósito. El CI levanta el compose con `.env.example`, que no trae secretos, para comprobar que la imagen arranca, que `/health` responde y que un endpoint protegido devuelve 401. Si fueran obligatorias, ese smoke test exigiría secretos en el repositorio o en los secrets de GitHub, que es justo lo que R-05 y R-32 quieren evitar.
+
+Sin ellas el servicio funciona salvo en lo que depende de Auth0: `/me/access`, `/me/permissions` y `/me/games` responden **503**. Para que eso no haya que diagnosticarlo a partir de una petición fallida, **la API escribe una advertencia al arrancar** diciendo que faltan y qué endpoints quedan sin servicio.
+
+Al aplicar las migraciones (`--migrate`) no se exige ninguna configuración de Auth0 ni de CORS: ese modo solo necesita la base de datos y termina sin atender peticiones.
 
 ### Dónde vive cada permiso en Auth0
 

@@ -164,6 +164,20 @@ if (soloMigrar)
     return;
 }
 
+// Las credenciales del M2M son deliberadamente opcionales para arrancar: el smoke test del CI
+// levanta el compose con el .env de ejemplo, sin secretos, y debe poder comprobar /health y que
+// un endpoint protegido responde 401. Sin ellas el servicio funciona salvo en lo que necesita
+// Auth0: /me/access, /me/permissions y /me/games responden 503. Se avisa al arrancar para que
+// ese 503 no haya que diagnosticarlo desde los logs de una peticion.
+if (string.IsNullOrWhiteSpace(builder.Configuration["Auth0:Management:ClientId"])
+    || string.IsNullOrWhiteSpace(builder.Configuration["Auth0:Management:ClientSecret"]))
+{
+    app.Logger.LogWarning(
+        "Faltan las credenciales de la aplicación M2M (Auth0__Management__ClientId y " +
+        "Auth0__Management__ClientSecret). El servicio arranca, pero no podrá consultar los " +
+        "permisos en Auth0: /me/access, /me/permissions y /me/games responderán 503.");
+}
+
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 
