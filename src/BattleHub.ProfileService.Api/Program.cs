@@ -10,14 +10,16 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 
-// Orígenes del navegador que pueden llamar a la API: el Shell local y el publicado.
-// R-09: no hay origen por defecto en el código. Si falta la configuración, la API no arranca,
-// porque un CORS vacío deja al Shell sin poder llamar a la API y el síntoma es confuso.
-// Las entradas vacías se ignoran, para poder dejar sin valor un origen opcional en el .env.
-// Las herramientas de EF (`dotnet ef migrations`) construyen la aplicación sin la configuración
-// del entorno: solo necesitan el modelo, así que estas comprobaciones no les aplican.
-var validarConfiguracion = !EF.IsDesignTime;
+// R-09: la configuración no tiene valores por defecto en el código, y faltar una obligatoria
+// impide arrancar. Hay dos usos que construyen la aplicación sin servir peticiones y solo
+// necesitan la base de datos: las herramientas de EF (`dotnet ef migrations`), que leen el
+// modelo, y el servicio `migrate` del compose, que aplica las migraciones y termina. Exigirles
+// el dominio del tenant o los orígenes del Shell los haría fallar por configuración que no usan.
+var soloMigrar = args.Contains("--migrate");
+var validarConfiguracion = !EF.IsDesignTime && !soloMigrar;
 
+// Orígenes del navegador que pueden llamar a la API: el Shell local y el publicado.
+// Las entradas vacías se ignoran, para poder dejar sin valor un origen opcional en el .env.
 var corsOrigins = (builder.Configuration.GetSection("Cors:Origins").Get<string[]>() ?? [])
     .Where(origin => !string.IsNullOrWhiteSpace(origin))
     .ToArray();
@@ -155,7 +157,7 @@ var app = builder.Build();
 
 // `--migrate` aplica las migraciones pendientes (incluido el catálogo de juegos) y termina sin
 // levantar la API. Lo usa el servicio `migrate` de docker-compose.yml.
-if (args.Contains("--migrate"))
+if (soloMigrar)
 {
     using var migrationScope = app.Services.CreateScope();
     await migrationScope.ServiceProvider.GetRequiredService<ProfileDbContext>().Database.MigrateAsync();
