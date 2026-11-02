@@ -13,6 +13,9 @@ on:
       - main
       - develop
 
+  # Ejecución manual desde la pestaña Actions, sobre la rama que se elija.
+  workflow_dispatch:
+
 jobs:
   build-and-test:
     name: Build and Test

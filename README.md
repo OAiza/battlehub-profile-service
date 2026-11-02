@@ -306,8 +306,10 @@ En local la cifra puede ser algo menor que en el CI, porque sin Docker se saltan
 
 | Workflow | Cuándo corre | Qué hace |
 |---|---|---|
-| **CI** (`ci.yml`) | En cada PR hacia `main` y en cada push a `main` | Restore, build, lint, pruebas unitarias, pruebas de integración, cobertura (mínimo 85%) y `docker build`, con una prueba del compose completo que verifica la migración y la generación de datos. Publica en el PR un comentario con la cobertura. |
-| **Build y pruebas unitarias** (`build-unitarias.yml`) | En cada push a cualquier rama | Solo build y pruebas unitarias, para tener una respuesta rápida mientras se trabaja. |
+| **CI** (`ci.yml`) | En cada PR hacia `main`, en cada push a `main` y a mano | Restore, build, lint, pruebas unitarias, pruebas de integración, cobertura (mínimo 85%) y `docker build`, con una prueba del compose completo que verifica la migración y la generación de datos. Publica en el PR un comentario con la cobertura. |
+| **Build y pruebas unitarias** (`build-unitarias.yml`) | En cada push a cualquier rama y a mano | Solo build y pruebas unitarias, para tener una respuesta rápida mientras se trabaja. |
+
+Los dos workflows se pueden ejecutar a mano: en la pestaña **Actions** se elige el workflow, se pulsa **Run workflow** y se indica la rama. En una ejecución manual el CI hace todos los pasos, salvo el comentario de cobertura, que solo se publica en los PR.
 
 ## Convenciones
 
