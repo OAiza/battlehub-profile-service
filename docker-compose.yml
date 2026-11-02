@@ -1,7 +1,9 @@
-# Levanta el Profile Service con su base de datos:
+# Levanta el Profile Service con su base de datos y datos de ejemplo:
 #   cp .env.example .env    (y completar los valores)
 #   docker compose up --build
 # Para borrar todo, incluidos los datos:  docker compose down -v
+#
+# Orden de arranque: mysql -> migrate -> generar-datos -> api
 
 services:
   mysql:
@@ -34,6 +36,24 @@ services:
         condition: service_healthy
     restart: "no"
 
+  # Generación de datos (R-28): un proceso aparte, independiente de la API, de las
+  # migraciones y del seed. Ejecuta docker/datos/generar-datos.sql con el cliente de MySQL
+  # cuando las migraciones terminaron; luego termina.
+  generar-datos:
+    image: mysql:8.4.9
+    environment:
+      # MYSQL_PWD evita escribir la contraseña en la línea de comandos.
+      MYSQL_PWD: ${MYSQL_PASSWORD}
+      DATOS_USUARIO: ${MYSQL_USER}
+      DATOS_BASE: ${MYSQL_DATABASE}
+    volumes:
+      - ./docker/datos:/datos:ro
+    entrypoint: ["sh", "-c", "mysql --host=mysql --user=\"$$DATOS_USUARIO\" \"$$DATOS_BASE\" < /datos/generar-datos.sql"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
   api:
     build: .
     image: battlehub-profile-service:local
@@ -49,7 +69,7 @@ services:
     ports:
       - "${PROFILE_API_PORT:-5220}:8080"
     depends_on:
-      migrate:
+      generar-datos:
         condition: service_completed_successfully
     restart: unless-stopped
 
