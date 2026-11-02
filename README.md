@@ -180,7 +180,7 @@ El Profile Service solo acepta un permiso si coincide **la API que lo emite y su
 
 ## Base de datos
 
-- **Motor:** MySQL 8.4, el motor fijado para el Profile Service en la documentación del proyecto. Es el único motor del servicio. La base en memoria **no es una opción de la API**: solo la usan las pruebas, que registran su propio proveedor al construir la aplicación de prueba (R-12).
+- **Motor:** MySQL 8.4, el motor fijado para el Profile Service en la documentación del proyecto. Es el único motor del servicio. La base en memoria **no es una opción de la API** (R-12), y tampoco la usan las pruebas: las unitarias simulan el acceso a datos con mocks y las de integración usan MySQL real (R-17, R-18).
 - **Migraciones:** se aplican de forma explícita con el servicio `migrate` del compose (la API con la opción `--migrate`), nunca al arrancar la API. Hay una migración por cada paso del modelo (R-14): `CreateProfiles`, `CreateGames` y `SeedGamesCatalog`.
 - **Seed:** el catálogo de juegos viaja en la migración `SeedGamesCatalog`, porque es parte del contrato con el Shell y no datos de ejemplo.
 - **Generación de datos:** `docker/datos/generar-datos.sql` inserta perfiles de ejemplo. Es un proceso aparte del seed y del código de la API, y se puede ejecutar varias veces sin duplicar datos.
@@ -222,7 +222,7 @@ erDiagram
 | Migraciones con `--migrate` en un servicio aparte | La API no modifica el esquema al arrancar; aplicar migraciones es un paso controlado. |
 | Claves primarias enteras con la clave natural como columna única | Cumple R-13. El `sub` de Auth0 es un texto largo que llegaría a cada índice y a cada clave ajena; como columna única cumple la misma función sin ser la clave primaria, y la API sigue exponiendo el `sub` para no cambiarle el contrato al Shell. |
 | Una migración por paso del modelo | Cumple R-14. Las tablas de permisos no se crean para borrarlas después: como no había datos reales, se rehízo el historial y simplemente no existen. |
-| La base en memoria solo en las pruebas | Cumple R-12. La API admite únicamente MySQL, así que un despliegue mal configurado no puede arrancar guardando perfiles en memoria y perderlos al reiniciar. |
+| Sin base en memoria | Cumple R-12. La API admite únicamente MySQL, así que un despliegue mal configurado no puede arrancar guardando perfiles en memoria y perderlos al reiniciar. |
 | Toda la configuración por variables de entorno, sin valores por defecto | Cumple R-09. Un marcador por defecto es peor que un fallo al arrancar: el servicio levantaría y rechazaría todos los tokens, o dejaría un juego invisible, sin decir por qué. |
 | Generación de datos con un script SQL independiente | Cumple R-28: tras `docker compose up` hay datos, sin mezclar el seed ni el código de la API. |
 | Validación completa del JWT de Auth0 | Se valida emisor, audiencia, firma y vigencia; la identidad sale siempre del `sub` del token. |
@@ -230,7 +230,8 @@ erDiagram
 | `/sync` rechaza tokens M2M | Un cliente de máquina no debe registrarse como jugador. |
 | Errores con ProblemDetails | Formato estándar de ASP.NET Core, igual en todos los endpoints. |
 | CORS con lista explícita de orígenes | Solo el Shell puede llamar a la API desde el navegador. |
-| Pruebas de integración contra MySQL real con Testcontainers | Prueban el motor real y no solo una base simulada. |
+| Pruebas unitarias con mocks (Moq) y una interfaz de acceso a datos | Cumple R-17. `IProfileRepository` separa al servicio de EF Core, así que su lógica se prueba sin ninguna base; el repositorio real se prueba contra MySQL. |
+| Pruebas de integración contra MySQL real, con JWT firmado y Auth0 simulado | Cumple R-18. Se reemplaza solo lo externo (el JWKS y la Management API de Auth0); la validación del token, el cliente de Auth0 con su paginación y filtro, y el motor son los reales. |
 | Cobertura mínima de 85% medida con ReportGenerator | La exige el proyecto (R-19); el CI falla si baja. |
 | Imagen Docker en dos etapas, con usuario sin privilegios y versiones fijas | Imagen pequeña, sin herramientas de compilación ni ejecución como `root`. |
 
@@ -266,6 +267,13 @@ dotnet test --filter Category=Integration
 ```
 
 Las pruebas de integración contra MySQL real levantan un contenedor con [Testcontainers](https://dotnet.testcontainers.org/), así que necesitan Docker. Sin Docker se saltan con un aviso; en el CI se ejecutan siempre.
+
+Las carpetas de cada proyecto de pruebas copian las de `src/` (R-16): `Controllers/`, `Services/` y `Data/` prueban lo que hay en la carpeta del mismo nombre, y las pruebas de `Program.cs` (arranque, salud, CORS, HTTPS y validación del JWT) quedan en la raíz, como `Program.cs`. Lo que no tiene equivalente en `src/` va en `Infrastructure/`.
+
+| Tipo | Qué es real | Qué se simula |
+|---|---|---|
+| **Unitarias** (R-17) | La clase que se prueba | Todas sus dependencias, con Moq: el controlador recibe un `IProfileService` simulado y el servicio un `IProfileRepository` y un `IAuth0ManagementClient` simulados. El cliente de Auth0 se prueba con un `HttpMessageHandler` falso. No se usa ninguna base de datos. |
+| **Integración** (R-18) | La API completa: middlewares, validación del JWT de `Program.cs`, controlador, servicio, cliente de Auth0, EF Core y MySQL 8.4 | Solo lo externo: las claves con que se firma el token (una clave RSA de prueba en vez del JWKS del tenant) y las respuestas de la Management API de Auth0 (`FakeAuth0`, con la misma forma y paginación). |
 
 ### Cobertura
 

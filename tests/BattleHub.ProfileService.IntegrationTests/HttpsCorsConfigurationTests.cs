@@ -12,20 +12,12 @@ namespace BattleHub.ProfileService.IntegrationTests;
 /// orígenes CORS y audiencia de Auth0.
 /// </summary>
 [Trait("Category", "Integration")]
-public class HttpsCorsConfigurationTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class HttpsCorsConfigurationTests : IDisposable
 {
-    private readonly WebApplicationFactory<Program> _factory;
+    // Ninguna de estas pruebas abre la base: no hace falta MySQL ni una base simulada.
+    private readonly ProfileApiFactory _factory = new();
 
-    public HttpsCorsConfigurationTests(WebApplicationFactory<Program> factory)
-    {
-        var dbName = "HttpsCorsDb_" + Guid.NewGuid().ToString("N");
-
-        _factory = factory.WithWebHostBuilder(builder =>
-        {
-            TestHost.ApplySettings(builder);
-            builder.ConfigureServices(services => TestHost.UseInMemoryDatabase(services, dbName));
-        });
-    }
+    public void Dispose() => _factory.Dispose();
 
     [Fact]
     public async Task RedireccionHttps_ActivaPorDefecto_RedirigeLasLlamadasHttp()

@@ -1,4 +1,4 @@
-namespace BattleHub.ProfileService.IntegrationTests.MySql;
+namespace BattleHub.ProfileService.IntegrationTests.Infrastructure;
 
 /// <summary>
 /// Prueba que necesita un MySQL real levantado con Docker (Testcontainers).
@@ -11,13 +11,29 @@ public sealed class MySqlFactAttribute : FactAttribute
     {
         if (!MySqlEnvironment.ShouldRun)
         {
-            Skip = "Requiere Docker para levantar MySQL con Testcontainers. En el CI se ejecuta siempre.";
+            Skip = MySqlEnvironment.SkipReason;
+        }
+    }
+}
+
+/// <summary>
+/// Igual que <see cref="MySqlFactAttribute"/>, para pruebas con varios casos.
+/// </summary>
+public sealed class MySqlTheoryAttribute : TheoryAttribute
+{
+    public MySqlTheoryAttribute()
+    {
+        if (!MySqlEnvironment.ShouldRun)
+        {
+            Skip = MySqlEnvironment.SkipReason;
         }
     }
 }
 
 public static class MySqlEnvironment
 {
+    public const string SkipReason = "Requiere Docker para levantar MySQL con Testcontainers. En el CI se ejecuta siempre.";
+
     public static bool IsCi =>
         string.Equals(Environment.GetEnvironmentVariable("CI"), "true", StringComparison.OrdinalIgnoreCase);
 
