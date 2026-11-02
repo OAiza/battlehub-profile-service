@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using BattleHub.ProfileService.Api.Dtos;
 using BattleHub.ProfileService.Api.Services;
+using BattleHub.ProfileService.IntegrationTests.Infrastructure;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -103,12 +104,15 @@ public class MySqlProfileEndpointTests : IClassFixture<MySqlDatabaseFixture>
 
     private WebApplicationFactory<Program> CreateFactory()
     {
+        // Configuración real salvo la base, que apunta al contenedor de MySQL de la prueba.
+        var settings = TestHost.Settings();
+        settings["ConnectionStrings:DefaultConnection"] = _database.ConnectionString;
+
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             // Un entorno distinto de Development: no carga user-secrets y exige configuración explícita.
             builder.UseEnvironment("Testing");
-            builder.UseSetting("DatabaseProvider", "MySQL");
-            builder.UseSetting("ConnectionStrings:DefaultConnection", _database.ConnectionString);
+            TestHost.ApplySettings(builder, settings);
 
             builder.ConfigureServices(services =>
             {

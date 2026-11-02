@@ -121,12 +121,29 @@ Toda la configuración llega por variables de entorno. `docker compose` las toma
 | `AUTH0_MGMT_CLIENT_ID` | `Auth0__Management__ClientId` | Client ID de la aplicación Machine-to-Machine de Profile Service para consultar Auth0 Management API (R-47). |
 | `AUTH0_MGMT_CLIENT_SECRET` | `Auth0__Management__ClientSecret` | Client Secret de la aplicación Machine-to-Machine. Se guarda en `.env` (nunca se versiona). |
 | `AUTH0_MGMT_AUDIENCE` | `Auth0__Management__Audience` | Audience de Auth0 Management API (`https://<AUTH0_DOMAIN>/api/v2/`). Opcional. |
-| `CORS_ORIGIN` | `Cors__Origins__0` | Origen del Shell en local (por defecto `http://localhost:4000`). |
+| `AUTH0_API_TYPING` | `Auth0__PermissionApis__Typing` | Identifier de la API de Typing Battle en Auth0, donde vive `games.typing.play`. **Obligatoria.** |
+| `AUTH0_API_TRIVIA` | `Auth0__PermissionApis__Trivia` | Identifier de la API de Trivia Battle, donde vive `games.trivia.play`. **Obligatoria.** |
+| `AUTH0_API_MEMORY` | `Auth0__PermissionApis__Memory` | Identifier de la API de Memory Match, donde vive `games.memory.play`. **Obligatoria.** |
+| `AUTH0_API_MATCHMAKING` | `Auth0__PermissionApis__Matchmaking` | Identifier de la API de Matchmaking. Opcional: `matches.create` se asigna en la API de Profile (`AUTH0_AUDIENCE`), y esta variable solo hace falta si el Equipo 2 lo moviera a la suya. |
+| `CORS_ORIGIN` | `Cors__Origins__0` | Origen del Shell en local. **Obligatoria.** |
 | `CORS_ORIGIN_PUBLISHED` | `Cors__Origins__1` | Origen del Shell publicado. Opcional. |
 | `HTTPS_REDIRECT` | `Https__Redirect` | Redirección a HTTPS. `false` mientras la API solo escuche HTTP, porque el navegador no acepta redirecciones en la petición previa de CORS. |
 | `PROFILE_API_PORT` | — | Puerto local donde se publica la API (por defecto `5220`). |
 
 El compose también define `DatabaseProvider=MySQL`. Si la API se publica detrás de un proxy que maneja el HTTPS, agregue `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true`.
+
+**La API no arranca si falta una variable obligatoria** (R-09): no hay valores por defecto escritos en el código, y el error dice qué variable falta. Es deliberado — un dominio o una audiencia de relleno harían que el servicio rechazara todos los tokens del tenant real, y una API de juego sin configurar dejaría ese juego invisible para todos los usuarios sin dar ningún error.
+
+### Dónde vive cada permiso en Auth0
+
+El Profile Service solo acepta un permiso si coincide **la API que lo emite y su código** a la vez. Un permiso con el nombre correcto emitido por otra API se descarta.
+
+| Permiso | API de Auth0 que lo concede |
+|---|---|
+| `games.typing.play` | `AUTH0_API_TYPING` |
+| `games.trivia.play` | `AUTH0_API_TRIVIA` |
+| `games.memory.play` | `AUTH0_API_MEMORY` |
+| `matches.create` | `AUTH0_AUDIENCE` (la API de Profile), o `AUTH0_API_MATCHMAKING` si se define |
 
 ### Puertos
 
@@ -138,10 +155,38 @@ El compose también define `DatabaseProvider=MySQL`. Si la API se publica detrá
 
 ## Base de datos
 
-- **Motor:** MySQL 8.4, el motor fijado para el Profile Service en la documentación del proyecto. Es el único motor del servicio.
-- **Migraciones:** se aplican de forma explícita con el servicio `migrate` del compose (la API con la opción `--migrate`), nunca al arrancar la API. Cada cambio del modelo va en su propia migración.
-- **Seed:** el catálogo de juegos y los permisos base viajan en las migraciones.
+- **Motor:** MySQL 8.4, el motor fijado para el Profile Service en la documentación del proyecto. Es el único motor del servicio. La base en memoria **no es una opción de la API**: solo la usan las pruebas, que registran su propio proveedor al construir la aplicación de prueba (R-12).
+- **Migraciones:** se aplican de forma explícita con el servicio `migrate` del compose (la API con la opción `--migrate`), nunca al arrancar la API. Hay una migración por cada paso del modelo (R-14): `CreateProfiles`, `CreateGames` y `SeedGamesCatalog`.
+- **Seed:** el catálogo de juegos viaja en la migración `SeedGamesCatalog`, porque es parte del contrato con el Shell y no datos de ejemplo.
 - **Generación de datos:** `docker/datos/generar-datos.sql` inserta perfiles de ejemplo. Es un proceso aparte del seed y del código de la API, y se puede ejecutar varias veces sin duplicar datos.
+
+### Modelo
+
+Dos tablas. Los permisos no se almacenan: desde la Etapa 2 viven en Auth0 y se consultan con la aplicación M2M (R-47, R-48).
+
+```mermaid
+erDiagram
+    profiles {
+        int id PK "AUTO_INCREMENT"
+        varchar_100 auth0_user_id UK "claim sub del token"
+        varchar_100 display_name
+        varchar_255 email "NULL"
+        datetime created_at
+        datetime last_login_at
+    }
+    games {
+        int id PK "AUTO_INCREMENT"
+        varchar_50 game_type UK "typing, trivia, memory"
+        varchar_100 name
+        varchar_100 required_permission "codigo del permiso en Auth0"
+        tinyint enabled
+    }
+```
+
+- **Ninguna clave primaria es de tipo texto** (R-13). La clave natural de cada tabla queda como columna única: `profiles.auth0_user_id` y `games.game_type`.
+- **La API nunca expone el `id` interno.** El identificador del usuario en todas las respuestas sigue siendo el `sub` de Auth0, como pidió el Shell.
+- `games.required_permission` es el punto donde se cruzan las dos fuentes: el catálogo de MySQL y los permisos que devuelve Auth0.
+- No hay relación entre las tablas. El diagrama editable está en `docs/diagramas/DiagramaER.drawio`.
 
 ## Decisiones técnicas
 
@@ -150,6 +195,10 @@ El compose también define `DatabaseProvider=MySQL`. Si la API se publica detrá
 | EF Core 10 con el proveedor oficial de Oracle (`MySql.EntityFrameworkCore`) | Pomelo, la alternativa habitual, no tiene versión para EF Core 10. |
 | Conversor de fechas a UTC | MySQL no guarda la zona horaria; sin el conversor, las fechas leídas saldrían sin el sufijo `Z`. |
 | Migraciones con `--migrate` en un servicio aparte | La API no modifica el esquema al arrancar; aplicar migraciones es un paso controlado. |
+| Claves primarias enteras con la clave natural como columna única | Cumple R-13. El `sub` de Auth0 es un texto largo que llegaría a cada índice y a cada clave ajena; como columna única cumple la misma función sin ser la clave primaria, y la API sigue exponiendo el `sub` para no cambiarle el contrato al Shell. |
+| Una migración por paso del modelo | Cumple R-14. Las tablas de permisos no se crean para borrarlas después: como no había datos reales, se rehízo el historial y simplemente no existen. |
+| La base en memoria solo en las pruebas | Cumple R-12. La API admite únicamente MySQL, así que un despliegue mal configurado no puede arrancar guardando perfiles en memoria y perderlos al reiniciar. |
+| Toda la configuración por variables de entorno, sin valores por defecto | Cumple R-09. Un marcador por defecto es peor que un fallo al arrancar: el servicio levantaría y rechazaría todos los tokens, o dejaría un juego invisible, sin decir por qué. |
 | Generación de datos con un script SQL independiente | Cumple R-28: tras `docker compose up` hay datos, sin mezclar el seed ni el código de la API. |
 | Validación completa del JWT de Auth0 | Se valida emisor, audiencia, firma y vigencia; la identidad sale siempre del `sub` del token. |
 | Consulta de permisos vía Auth0 Management API (M2M) y endpoint `/me/access` | Cumple R-47 y R-48: los permisos se gestionan en Auth0 y Profile Service los consulta con su propia credencial M2M con `read:users`. El Shell consume un único endpoint con `userId`, `permissions` y `games`. Si Auth0 falla, responde 503 sin conceder acceso por defecto. |

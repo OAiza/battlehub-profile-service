@@ -1,4 +1,5 @@
 using System.Net;
+using BattleHub.ProfileService.IntegrationTests.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -25,7 +26,13 @@ public class SecurityEndpointTests : IClassFixture<WebApplicationFactory<Program
 
     public SecurityEndpointTests(WebApplicationFactory<Program> factory)
     {
-        _factory = factory;
+        var dbName = "SecurityDb_" + Guid.NewGuid().ToString("N");
+
+        _factory = factory.WithWebHostBuilder(builder =>
+        {
+            TestHost.ApplySettings(builder);
+            builder.ConfigureServices(services => TestHost.UseInMemoryDatabase(services, dbName));
+        });
     }
 
     [Fact]

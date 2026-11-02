@@ -10,57 +10,48 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 
-// Orígenes del navegador que pueden llamar a la API (ADR-006): el Shell local y el publicado.
+// Orígenes del navegador que pueden llamar a la API: el Shell local y el publicado.
+// R-09: no hay origen por defecto en el código. Si falta la configuración, la API no arranca,
+// porque un CORS vacío deja al Shell sin poder llamar a la API y el síntoma es confuso.
 // Las entradas vacías se ignoran, para poder dejar sin valor un origen opcional en el .env.
-var corsOrigins = (builder.Configuration.GetSection("Cors:Origins").Get<string[]>() ?? ["http://localhost:4000"])
+// Las herramientas de EF (`dotnet ef migrations`) construyen la aplicación sin la configuración
+// del entorno: solo necesitan el modelo, así que estas comprobaciones no les aplican.
+var validarConfiguracion = !EF.IsDesignTime;
+
+var corsOrigins = (builder.Configuration.GetSection("Cors:Origins").Get<string[]>() ?? [])
     .Where(origin => !string.IsNullOrWhiteSpace(origin))
     .ToArray();
+if (validarConfiguracion && corsOrigins.Length == 0)
+{
+    throw new InvalidOperationException(
+        "Falta la configuración 'Cors:Origins'. Defina al menos Cors__Origins__0 con el origen del Shell.");
+}
 builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy.WithOrigins(corsOrigins).AllowAnyHeader().AllowAnyMethod()));
 
 // Configuración de Auth0
 builder.Services.Configure<Auth0Options>(builder.Configuration.GetSection(Auth0Options.SectionName));
 
 // Configuración de persistencia con EF Core.
-// Fuera de Development, DatabaseProvider es obligatorio: un despliegue mal configurado
-// falla al arrancar en vez de guardar los perfiles en memoria y perderlos al reiniciar.
-var dbProvider = builder.Configuration["DatabaseProvider"];
-if (EF.IsDesignTime)
-{
-    dbProvider = "MySQL";
-}
-else if (string.IsNullOrWhiteSpace(dbProvider) && builder.Environment.IsDevelopment())
-{
-    dbProvider = "InMemory";
-}
+// R-12: el único motor de la API es MySQL. La base en memoria solo se permite en pruebas, que
+// registran su propio proveedor al construir la aplicación de prueba.
+var dbProvider = EF.IsDesignTime ? "MySQL" : builder.Configuration["DatabaseProvider"];
 
-bool useMySql = string.Equals(dbProvider, "MySQL", StringComparison.OrdinalIgnoreCase);
-bool useInMemory = string.Equals(dbProvider, "InMemory", StringComparison.OrdinalIgnoreCase);
-
-if (!useMySql && !useInMemory)
+if (!string.Equals(dbProvider, "MySQL", StringComparison.OrdinalIgnoreCase))
 {
     throw new InvalidOperationException(
-        $"DatabaseProvider debe ser 'MySQL' o 'InMemory' (valor actual: '{dbProvider}').");
+        $"DatabaseProvider debe ser 'MySQL' (valor actual: '{dbProvider}').");
 }
 
-if (useMySql)
-{
-    // La cadena de conexión no se versiona: va en user-secrets o en la variable de entorno
-    // ConnectionStrings__DefaultConnection. Generar migraciones no necesita conectarse a MySQL.
-    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
-        ?? (EF.IsDesignTime
-            ? "Server=localhost;Database=battlehub_profiles;"
-            : throw new InvalidOperationException(
-                "Falta la cadena de conexión 'ConnectionStrings:DefaultConnection'."));
+// La cadena de conexión no se versiona: llega por la variable de entorno
+// ConnectionStrings__DefaultConnection. Generar migraciones no necesita conectarse a MySQL.
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? (EF.IsDesignTime
+        ? "Server=localhost;Database=battlehub_profiles;"
+        : throw new InvalidOperationException(
+            "Falta la cadena de conexión 'ConnectionStrings:DefaultConnection'."));
 
-    builder.Services.AddDbContext<ProfileDbContext>(options =>
-        options.UseMySQL(connectionString));
-}
-else
-{
-    var inMemoryDbName = builder.Configuration["InMemoryDatabaseName"] ?? "BattleHubProfiles";
-    builder.Services.AddDbContext<ProfileDbContext>(options =>
-        options.UseInMemoryDatabase(inMemoryDbName));
-}
+builder.Services.AddDbContext<ProfileDbContext>(options =>
+    options.UseMySQL(connectionString));
 
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient<IAuth0ManagementClient, Auth0ManagementClient>(client =>
@@ -99,9 +90,43 @@ builder.Services.AddProblemDetails();
 
 builder.Services.AddHealthChecks();
 
-// Configuración de Autenticación JWT Bearer con Auth0
-var auth0Domain = builder.Configuration["Auth0:Domain"] ?? "auth.battlehub.local";
-var auth0Audience = builder.Configuration["Auth0:Audience"] ?? "https://api.battlehub.local/profile";
+// Configuración de Autenticación JWT Bearer con Auth0.
+// R-09: no hay dominio ni audiencia por defecto en el código. Arrancar con un marcador haría
+// que la API rechazara todos los tokens del tenant real sin decir por qué.
+var auth0Domain = builder.Configuration["Auth0:Domain"];
+var auth0Audience = builder.Configuration["Auth0:Audience"];
+
+if (validarConfiguracion)
+{
+    if (string.IsNullOrWhiteSpace(auth0Domain))
+    {
+        throw new InvalidOperationException(
+            "Falta la configuración 'Auth0:Domain'. Defina Auth0__Domain con el dominio del tenant.");
+    }
+
+    if (string.IsNullOrWhiteSpace(auth0Audience))
+    {
+        throw new InvalidOperationException(
+            "Falta la configuración 'Auth0:Audience'. Defina Auth0__Audience con el Identifier de la API.");
+    }
+
+    // Los permisos de juegos viven en la API de cada juego, no en la de Profile. Si falta alguno
+    // de esos identifiers, el filtro no reconocería ese permiso y el usuario vería un juego de
+    // menos sin ningún error: es preferible no arrancar.
+    foreach (var clave in new[]
+             {
+                 "Auth0:PermissionApis:Typing",
+                 "Auth0:PermissionApis:Trivia",
+                 "Auth0:PermissionApis:Memory"
+             })
+    {
+        if (string.IsNullOrWhiteSpace(builder.Configuration[clave]))
+        {
+            throw new InvalidOperationException(
+                $"Falta la configuración '{clave}'. Defina el Identifier de la API del juego en Auth0.");
+        }
+    }
+}
 
 builder.Services.AddAuthentication(options =>
 {
@@ -128,24 +153,13 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
-// `--migrate` aplica las migraciones pendientes (incluidos los datos iniciales de permisos y
-// juegos) y termina sin levantar la API. Lo usa el servicio `migrate` de docker-compose.yml.
+// `--migrate` aplica las migraciones pendientes (incluido el catálogo de juegos) y termina sin
+// levantar la API. Lo usa el servicio `migrate` de docker-compose.yml.
 if (args.Contains("--migrate"))
 {
-    if (!useMySql)
-    {
-        throw new InvalidOperationException("--migrate solo aplica con DatabaseProvider=MySQL.");
-    }
-
     using var migrationScope = app.Services.CreateScope();
     await migrationScope.ServiceProvider.GetRequiredService<ProfileDbContext>().Database.MigrateAsync();
     return;
-}
-
-if (!useMySql)
-{
-    using var scope = app.Services.CreateScope();
-    await scope.ServiceProvider.GetRequiredService<ProfileDbContext>().Database.EnsureCreatedAsync();
 }
 
 app.UseExceptionHandler();

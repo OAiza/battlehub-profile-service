@@ -1,4 +1,5 @@
 using System.Net;
+using BattleHub.ProfileService.IntegrationTests.Infrastructure;
 using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace BattleHub.ProfileService.IntegrationTests;
@@ -10,7 +11,13 @@ public class HealthEndpointTests : IClassFixture<WebApplicationFactory<Program>>
 
     public HealthEndpointTests(WebApplicationFactory<Program> factory)
     {
-        _factory = factory;
+        var dbName = "HealthDb_" + Guid.NewGuid().ToString("N");
+
+        _factory = factory.WithWebHostBuilder(builder =>
+        {
+            TestHost.ApplySettings(builder);
+            builder.ConfigureServices(services => TestHost.UseInMemoryDatabase(services, dbName));
+        });
     }
 
     [Fact]
