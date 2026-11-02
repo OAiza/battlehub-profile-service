@@ -15,8 +15,11 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Defina MYSQL_PASSWORD en .env}
     volumes:
       - profile-mysql-data:/var/lib/mysql
+    # El ping va por TCP a 127.0.0.1, como se conectan migrate y la API. Con --host=localhost
+    # usaría el socket interno y respondería durante el servidor temporal sin red que la
+    # imagen levanta en el primer arranque, y migrate fallaría con "Connection refused".
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping --host=localhost --user=root --password=$$MYSQL_ROOT_PASSWORD --silent"]
+      test: ["CMD-SHELL", "mysqladmin ping --host=127.0.0.1 --protocol=tcp --user=root --password=$$MYSQL_ROOT_PASSWORD --silent"]
       interval: 5s
       timeout: 5s
       retries: 20
