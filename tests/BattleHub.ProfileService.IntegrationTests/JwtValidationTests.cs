@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Security.Cryptography;
+using BattleHub.ProfileService.IntegrationTests.Infrastructure;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -37,9 +38,9 @@ public class JwtValidationTests : IClassFixture<WebApplicationFactory<Program>>,
 
         _factory = factory.WithWebHostBuilder(builder =>
         {
-            builder.UseSetting("Auth0:Domain", Domain);
-            builder.UseSetting("Auth0:Audience", Audience);
-            builder.UseSetting("InMemoryDatabaseName", databaseName);
+            TestHost.ApplySettings(builder, auth0Domain: Domain, auth0Audience: Audience);
+
+            builder.ConfigureServices(services => TestHost.UseInMemoryDatabase(services, databaseName));
 
             builder.ConfigureTestServices(services =>
             {

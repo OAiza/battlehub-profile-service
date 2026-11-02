@@ -43,10 +43,10 @@ public class ProfileServiceTests
     }
 
     [Fact]
-    public async Task SyncProfileAsync_NuevoUsuario_CreaPerfilSinConcederPermisosLocalesEnMySql()
+    public async Task SyncProfileAsync_NuevoUsuario_GuardaElSubEnSuColumnaYUsaClavePrimariaInterna()
     {
         // Arrange
-        using var context = CreateInMemoryContext(nameof(SyncProfileAsync_NuevoUsuario_CreaPerfilSinConcederPermisosLocalesEnMySql));
+        using var context = CreateInMemoryContext(nameof(SyncProfileAsync_NuevoUsuario_GuardaElSubEnSuColumnaYUsaClavePrimariaInterna));
         var auth0Mock = CreateAuth0Mock();
         var service = new ProfileServiceImpl(context, auth0Mock.Object);
 
@@ -55,14 +55,16 @@ public class ProfileServiceTests
 
         // Assert
         Assert.True(created);
+        // El contrato con el Shell no cambia: la API sigue devolviendo el sub de Auth0.
         Assert.Equal("auth0|12345", profile.Id);
         Assert.Equal("Francisco", profile.DisplayName);
         Assert.Equal("francisco@ejemplo.com", profile.Email);
 
-        var savedProfile = await context.Profiles.Include(p => p.Permissions).FirstOrDefaultAsync(p => p.Id == "auth0|12345");
+        var savedProfile = await context.Profiles.FirstOrDefaultAsync(p => p.Auth0UserId == "auth0|12345");
         Assert.NotNull(savedProfile);
-        // R-47 / R-48: Los permisos no se inventan ni se asignan por defecto en MySQL.
-        Assert.Empty(savedProfile.Permissions);
+        // R-13: la clave primaria es entera e interna, y el sub vive en su propia columna.
+        Assert.True(savedProfile.Id > 0);
+        Assert.Equal("auth0|12345", savedProfile.Auth0UserId);
     }
 
     [Fact]
@@ -83,7 +85,7 @@ public class ProfileServiceTests
         Assert.Equal("NombreNuevo", updatedProfile.DisplayName);
         Assert.Equal("nuevo@mail.com", updatedProfile.Email);
 
-        var count = await context.Profiles.CountAsync(p => p.Id == "auth0|999");
+        var count = await context.Profiles.CountAsync(p => p.Auth0UserId == "auth0|999");
         Assert.Equal(1, count);
     }
 
@@ -256,7 +258,7 @@ public class ProfileServiceTests
         Assert.Equal("Francisco", profile.DisplayName);
 
         using var verifyContext = new ProfileDbContext(CreateOptions(databaseName, root));
-        Assert.Equal(1, await verifyContext.Profiles.CountAsync(p => p.Id == userId));
+        Assert.Equal(1, await verifyContext.Profiles.CountAsync(p => p.Auth0UserId == userId));
     }
 
     private static DbContextOptions<ProfileDbContext> CreateOptions(
@@ -291,7 +293,7 @@ public class ProfileServiceTests
                 using var otherContext = createOtherContext();
                 otherContext.Profiles.Add(new Profile
                 {
-                    Id = userId,
+                    Auth0UserId = userId,
                     DisplayName = "Creado en paralelo",
                     CreatedAt = DateTime.UtcNow,
                     LastLoginAt = DateTime.UtcNow

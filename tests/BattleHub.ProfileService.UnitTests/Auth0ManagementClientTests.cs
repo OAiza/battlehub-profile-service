@@ -33,6 +33,14 @@ public class Auth0ManagementClientTests
         var options = Options.Create(new Auth0Options
         {
             Domain = "test.auth0.com",
+            Audience = "https://api.battlehub.local/profile",
+            PermissionApis = new Auth0PermissionApiOptions
+            {
+                Typing = "https://api.battlehub.local/typing",
+                Trivia = "https://api.battlehub.local/trivia",
+                Memory = "https://api.battlehub.local/memory",
+                Matchmaking = "https://api.battlehub.local/matchmaking"
+            },
             Management = new Auth0ManagementOptions
             {
                 ClientId = "", // Vacío
@@ -57,6 +65,14 @@ public class Auth0ManagementClientTests
         var options = Options.Create(new Auth0Options
         {
             Domain = "test.auth0.com",
+            Audience = "https://api.battlehub.local/profile",
+            PermissionApis = new Auth0PermissionApiOptions
+            {
+                Typing = "https://api.battlehub.local/typing",
+                Trivia = "https://api.battlehub.local/trivia",
+                Memory = "https://api.battlehub.local/memory",
+                Matchmaking = "https://api.battlehub.local/matchmaking"
+            },
             Management = new Auth0ManagementOptions
             {
                 ClientId = "client-123",
@@ -130,6 +146,14 @@ public class Auth0ManagementClientTests
         var options = Options.Create(new Auth0Options
         {
             Domain = "test.auth0.com",
+            Audience = "https://api.battlehub.local/profile",
+            PermissionApis = new Auth0PermissionApiOptions
+            {
+                Typing = "https://api.battlehub.local/typing",
+                Trivia = "https://api.battlehub.local/trivia",
+                Memory = "https://api.battlehub.local/memory",
+                Matchmaking = "https://api.battlehub.local/matchmaking"
+            },
             Management = new Auth0ManagementOptions
             {
                 ClientId = "client-123",
@@ -201,6 +225,14 @@ public class Auth0ManagementClientTests
         var options = Options.Create(new Auth0Options
         {
             Domain = "test.auth0.com",
+            Audience = "https://api.battlehub.local/profile",
+            PermissionApis = new Auth0PermissionApiOptions
+            {
+                Typing = "https://api.battlehub.local/typing",
+                Trivia = "https://api.battlehub.local/trivia",
+                Memory = "https://api.battlehub.local/memory",
+                Matchmaking = "https://api.battlehub.local/matchmaking"
+            },
             Management = new Auth0ManagementOptions
             {
                 ClientId = "client-123",
@@ -240,6 +272,14 @@ public class Auth0ManagementClientTests
         var options = Options.Create(new Auth0Options
         {
             Domain = "test.auth0.com",
+            Audience = "https://api.battlehub.local/profile",
+            PermissionApis = new Auth0PermissionApiOptions
+            {
+                Typing = "https://api.battlehub.local/typing",
+                Trivia = "https://api.battlehub.local/trivia",
+                Memory = "https://api.battlehub.local/memory",
+                Matchmaking = "https://api.battlehub.local/matchmaking"
+            },
             Management = new Auth0ManagementOptions
             {
                 ClientId = "client-123",
@@ -277,6 +317,14 @@ public class Auth0ManagementClientTests
         var options = Options.Create(new Auth0Options
         {
             Domain = "test.auth0.com",
+            Audience = "https://api.battlehub.local/profile",
+            PermissionApis = new Auth0PermissionApiOptions
+            {
+                Typing = "https://api.battlehub.local/typing",
+                Trivia = "https://api.battlehub.local/trivia",
+                Memory = "https://api.battlehub.local/memory",
+                Matchmaking = "https://api.battlehub.local/matchmaking"
+            },
             Management = new Auth0ManagementOptions
             {
                 ClientId = "client-123",
@@ -310,6 +358,14 @@ public class Auth0ManagementClientTests
         var options = Options.Create(new Auth0Options
         {
             Domain = "test.auth0.com",
+            Audience = "https://api.battlehub.local/profile",
+            PermissionApis = new Auth0PermissionApiOptions
+            {
+                Typing = "https://api.battlehub.local/typing",
+                Trivia = "https://api.battlehub.local/trivia",
+                Memory = "https://api.battlehub.local/memory",
+                Matchmaking = "https://api.battlehub.local/matchmaking"
+            },
             Management = new Auth0ManagementOptions
             {
                 ClientId = "client-123",

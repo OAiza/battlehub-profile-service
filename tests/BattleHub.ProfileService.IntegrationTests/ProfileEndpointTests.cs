@@ -4,9 +4,9 @@ using System.Security.Claims;
 using System.Text.Encodings.Web;
 using BattleHub.ProfileService.Api.Dtos;
 using BattleHub.ProfileService.Api.Services;
+using BattleHub.ProfileService.IntegrationTests.Infrastructure;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -72,17 +72,11 @@ public class ProfileEndpointTests : IClassFixture<WebApplicationFactory<Program>
 
         _factory = factory.WithWebHostBuilder(builder =>
         {
-            builder.ConfigureAppConfiguration((context, config) =>
-            {
-                config.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["DatabaseProvider"] = "InMemory",
-                    ["InMemoryDatabaseName"] = dbName
-                });
-            });
+            TestHost.ApplySettings(builder);
 
             builder.ConfigureServices(services =>
             {
+                TestHost.UseInMemoryDatabase(services, dbName);
                 services.AddHttpContextAccessor();
                 services.AddSingleton<IAuth0ManagementClient, TestAuth0ManagementClient>();
                 services.AddAuthentication(options =>
@@ -93,6 +87,10 @@ public class ProfileEndpointTests : IClassFixture<WebApplicationFactory<Program>
                 .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>("Test", options => { });
             });
         });
+
+        // El catálogo de juegos llega con el seed. En MySQL lo aplican las migraciones; aquí hay
+        // que crear el esquema a mano, porque la API ya no lo hace al arrancar (R-12).
+        TestHost.EnsureDatabaseCreated(_factory.Services);
     }
 
     [Fact]
@@ -161,7 +159,7 @@ public class ProfileEndpointTests : IClassFixture<WebApplicationFactory<Program>
     }
 
     [Fact]
-    public async Task GetPermissions_UsuarioSincronizado_RespondePermisosPorDefecto()
+    public async Task GetPermissions_UsuarioSincronizado_DevuelveLosPermisosDeAuth0()
     {
         var client = _factory.CreateClient();
         var userId = "auth0|user-permissions";
@@ -369,5 +367,38 @@ public class ProfileEndpointTests : IClassFixture<WebApplicationFactory<Program>
         var response = await client.GetAsync("/api/profiles/me/access");
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+    }
+
+    [Fact]
+    public async Task GetAccess_PermisoRetiradoEnAuth0_NoReapareceTrasVolverASincronizar()
+    {
+        const string userId = "auth0|user-permiso-retirado";
+        const string conTresJuegos = "matches.create,games.typing.play,games.trivia.play,games.memory.play";
+        const string sinTrivia = "matches.create,games.typing.play,games.memory.play";
+
+        // 1. El usuario entra con los tres juegos habilitados.
+        var clienteInicial = _factory.CreateClient();
+        clienteInicial.DefaultRequestHeaders.Add("X-Test-UserId", userId);
+        clienteInicial.DefaultRequestHeaders.Add("X-Test-Permissions", conTresJuegos);
+
+        await clienteInicial.PostAsJsonAsync("/api/profiles/sync", new { displayName = "Permiso Retirado" });
+        var accesoInicial = await clienteInicial.GetFromJsonAsync<UserAccessResponse>("/api/profiles/me/access");
+        Assert.NotNull(accesoInicial);
+        Assert.Equal(3, accesoInicial.Games.Count);
+
+        // 2. Le retiran games.trivia.play en Auth0 y vuelve a sincronizarse: /sync no escribe
+        //    permisos, así que no puede devolverle el que perdió.
+        var clienteTrasRetiro = _factory.CreateClient();
+        clienteTrasRetiro.DefaultRequestHeaders.Add("X-Test-UserId", userId);
+        clienteTrasRetiro.DefaultRequestHeaders.Add("X-Test-Permissions", sinTrivia);
+
+        var reSync = await clienteTrasRetiro.PostAsJsonAsync("/api/profiles/sync", new { displayName = "Permiso Retirado" });
+        Assert.Equal(HttpStatusCode.OK, reSync.StatusCode);
+
+        var accesoFinal = await clienteTrasRetiro.GetFromJsonAsync<UserAccessResponse>("/api/profiles/me/access");
+        Assert.NotNull(accesoFinal);
+        Assert.DoesNotContain("games.trivia.play", accesoFinal.Permissions);
+        Assert.DoesNotContain(accesoFinal.Games, juego => juego.GameType == "trivia");
+        Assert.Equal(2, accesoFinal.Games.Count);
     }
 }

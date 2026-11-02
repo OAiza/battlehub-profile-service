@@ -16,19 +16,25 @@ namespace BattleHub.ProfileService.Api.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.12")
+                .HasAnnotation("ProductVersion", "10.0.9")
                 .HasAnnotation("Relational:MaxIdentifierLength", 64);
 
             modelBuilder.Entity("BattleHub.ProfileService.Api.Models.Game", b =>
                 {
-                    b.Property<string>("GameType")
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)")
-                        .HasColumnName("game_type");
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("id");
 
                     b.Property<bool>("Enabled")
                         .HasColumnType("tinyint(1)")
                         .HasColumnName("enabled");
+
+                    b.Property<string>("GameType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)")
+                        .HasColumnName("game_type");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -42,80 +48,53 @@ namespace BattleHub.ProfileService.Api.Migrations
                         .HasColumnType("varchar(100)")
                         .HasColumnName("required_permission");
 
-                    b.HasKey("GameType");
+                    b.HasKey("Id");
+
+                    b.HasIndex("GameType")
+                        .IsUnique()
+                        .HasDatabaseName("UX_games_game_type");
 
                     b.ToTable("games", (string)null);
 
                     b.HasData(
                         new
                         {
-                            GameType = "typing",
+                            Id = 1,
                             Enabled = true,
+                            GameType = "typing",
                             Name = "Typing Battle",
                             RequiredPermission = "games.typing.play"
                         },
                         new
                         {
-                            GameType = "trivia",
+                            Id = 2,
                             Enabled = true,
+                            GameType = "trivia",
                             Name = "Trivia Battle",
                             RequiredPermission = "games.trivia.play"
                         },
                         new
                         {
-                            GameType = "memory",
+                            Id = 3,
                             Enabled = true,
+                            GameType = "memory",
                             Name = "Memory Match",
                             RequiredPermission = "games.memory.play"
                         });
                 });
 
-            modelBuilder.Entity("BattleHub.ProfileService.Api.Models.Permission", b =>
-                {
-                    b.Property<string>("Code")
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)")
-                        .HasColumnName("code");
-
-                    b.Property<string>("Description")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("varchar(255)")
-                        .HasColumnName("description");
-
-                    b.HasKey("Code");
-
-                    b.ToTable("permissions", (string)null);
-
-                    b.HasData(
-                        new
-                        {
-                            Code = "matches.create",
-                            Description = "Crear salas de partidas"
-                        },
-                        new
-                        {
-                            Code = "games.typing.play",
-                            Description = "Jugar a Typing Battle"
-                        },
-                        new
-                        {
-                            Code = "games.trivia.play",
-                            Description = "Jugar a Trivia Battle"
-                        },
-                        new
-                        {
-                            Code = "games.memory.play",
-                            Description = "Jugar a Memory Match"
-                        });
-                });
-
             modelBuilder.Entity("BattleHub.ProfileService.Api.Models.Profile", b =>
                 {
-                    b.Property<string>("Id")
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Auth0UserId")
+                        .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("varchar(100)")
-                        .HasColumnName("id");
+                        .HasColumnName("auth0_user_id");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)")
@@ -138,37 +117,11 @@ namespace BattleHub.ProfileService.Api.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Auth0UserId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_profiles_auth0_user_id");
+
                     b.ToTable("profiles", (string)null);
-                });
-
-            modelBuilder.Entity("PermissionProfile", b =>
-                {
-                    b.Property<string>("PermissionsCode")
-                        .HasColumnType("varchar(100)");
-
-                    b.Property<string>("ProfilesId")
-                        .HasColumnType("varchar(100)");
-
-                    b.HasKey("PermissionsCode", "ProfilesId");
-
-                    b.HasIndex("ProfilesId");
-
-                    b.ToTable("profile_permissions", (string)null);
-                });
-
-            modelBuilder.Entity("PermissionProfile", b =>
-                {
-                    b.HasOne("BattleHub.ProfileService.Api.Models.Permission", null)
-                        .WithMany()
-                        .HasForeignKey("PermissionsCode")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("BattleHub.ProfileService.Api.Models.Profile", null)
-                        .WithMany()
-                        .HasForeignKey("ProfilesId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
                 });
 #pragma warning restore 612, 618
         }

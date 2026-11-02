@@ -1,4 +1,5 @@
 using System.Net;
+using BattleHub.ProfileService.IntegrationTests.Infrastructure;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -8,7 +9,7 @@ namespace BattleHub.ProfileService.IntegrationTests;
 
 /// <summary>
 /// Configuración que afecta a las llamadas del Shell desde el navegador: redirección a HTTPS,
-/// orígenes CORS (ADR-006) y audiencia de Auth0 (ADR-007).
+/// orígenes CORS y audiencia de Auth0.
 /// </summary>
 [Trait("Category", "Integration")]
 public class HttpsCorsConfigurationTests : IClassFixture<WebApplicationFactory<Program>>
@@ -17,7 +18,13 @@ public class HttpsCorsConfigurationTests : IClassFixture<WebApplicationFactory<P
 
     public HttpsCorsConfigurationTests(WebApplicationFactory<Program> factory)
     {
-        _factory = factory;
+        var dbName = "HttpsCorsDb_" + Guid.NewGuid().ToString("N");
+
+        _factory = factory.WithWebHostBuilder(builder =>
+        {
+            TestHost.ApplySettings(builder);
+            builder.ConfigureServices(services => TestHost.UseInMemoryDatabase(services, dbName));
+        });
     }
 
     [Fact]
@@ -85,13 +92,15 @@ public class HttpsCorsConfigurationTests : IClassFixture<WebApplicationFactory<P
     }
 
     [Fact]
-    public void Audiencia_PorDefecto_EsLaDelAdr007()
+    public void Audiencia_SeTomaDeLaConfiguracion()
     {
+        // R-09: la audiencia ya no tiene valor por defecto en el código; llega por configuración
+        // y es la que valida el bearer que envía el Shell.
         var options = _factory.Services
             .GetRequiredService<IOptionsMonitor<JwtBearerOptions>>()
             .Get(JwtBearerDefaults.AuthenticationScheme);
 
-        Assert.Equal("https://api.battlehub.local/profile", options.Audience);
+        Assert.Equal(TestHost.Auth0Audience, options.Audience);
     }
 
     private static HttpRequestMessage CreatePreflight(string origin)

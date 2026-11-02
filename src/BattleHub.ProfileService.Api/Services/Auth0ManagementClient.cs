@@ -14,14 +14,12 @@ public class Auth0ManagementClient : IAuth0ManagementClient
     private readonly Auth0Options _options;
     private readonly ILogger<Auth0ManagementClient> _logger;
 
-    private static readonly HashSet<(string ApiIdentifier, string PermissionCode)> AllowedPermissions = new()
-    {
-        ("https://api.battlehub.local/typing", "games.typing.play"),
-        ("https://api.battlehub.local/trivia", "games.trivia.play"),
-        ("https://api.battlehub.local/memory", "games.memory.play"),
-        ("https://api.battlehub.local/profile", "matches.create"),
-        ("https://api.battlehub.local/matchmaking", "matches.create")
-    };
+    /// <summary>
+    /// Combinaciones (API, permiso) que este servicio acepta. Los identifiers de las APIs vienen
+    /// de la configuración (R-09) y los códigos de permiso del contrato con el Shell. Un permiso
+    /// con el nombre correcto pero emitido por otra API se descarta.
+    /// </summary>
+    private readonly HashSet<(string ApiIdentifier, string PermissionCode)> _allowedPermissions;
 
     public Auth0ManagementClient(
         HttpClient httpClient,
@@ -33,6 +31,29 @@ public class Auth0ManagementClient : IAuth0ManagementClient
         _memoryCache = memoryCache;
         _options = options.Value;
         _logger = logger;
+        _allowedPermissions = BuildAllowedPermissions(_options);
+    }
+
+    private static HashSet<(string ApiIdentifier, string PermissionCode)> BuildAllowedPermissions(Auth0Options options)
+    {
+        var allowed = new HashSet<(string, string)>();
+
+        void Allow(string apiIdentifier, string permissionCode)
+        {
+            // Una API sin configurar no habilita nada, en vez de habilitarlo todo.
+            if (!string.IsNullOrWhiteSpace(apiIdentifier))
+            {
+                allowed.Add((apiIdentifier, permissionCode));
+            }
+        }
+
+        Allow(options.PermissionApis.Typing, "games.typing.play");
+        Allow(options.PermissionApis.Trivia, "games.trivia.play");
+        Allow(options.PermissionApis.Memory, "games.memory.play");
+        Allow(options.Audience, "matches.create");
+        Allow(options.PermissionApis.Matchmaking, "matches.create");
+
+        return allowed;
     }
 
     public async Task<IReadOnlyList<string>> GetUserEffectivePermissionsAsync(string userId, CancellationToken cancellationToken = default)
@@ -97,7 +118,7 @@ public class Auth0ManagementClient : IAuth0ManagementClient
                     if (!string.IsNullOrWhiteSpace(item.ResourceServerIdentifier) &&
                         !string.IsNullOrWhiteSpace(item.PermissionName))
                     {
-                        if (AllowedPermissions.Contains((item.ResourceServerIdentifier, item.PermissionName)))
+                        if (_allowedPermissions.Contains((item.ResourceServerIdentifier, item.PermissionName)))
                         {
                             matchedPermissions.Add(item.PermissionName);
                         }

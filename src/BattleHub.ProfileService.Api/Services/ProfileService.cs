@@ -28,8 +28,7 @@ public class ProfileService : IProfileService
         }
 
         var profile = await _context.Profiles
-            .Include(p => p.Permissions)
-            .FirstOrDefaultAsync(p => p.Id == userId, cancellationToken);
+            .FirstOrDefaultAsync(p => p.Auth0UserId == userId, cancellationToken);
 
         bool created = false;
         var now = DateTime.UtcNow;
@@ -39,7 +38,7 @@ public class ProfileService : IProfileService
             created = true;
             profile = new Profile
             {
-                Id = userId,
+                Auth0UserId = userId,
                 DisplayName = !string.IsNullOrWhiteSpace(displayName) ? displayName : userId,
                 Email = email,
                 CreatedAt = now,
@@ -72,7 +71,7 @@ public class ProfileService : IProfileService
             // Otra llamada simultánea a /sync creó el mismo perfil primero.
             // Se descarta el alta y se continúa con el perfil que ya existe.
             _context.ChangeTracker.Clear();
-            var alreadyExists = await _context.Profiles.AnyAsync(p => p.Id == userId, cancellationToken);
+            var alreadyExists = await _context.Profiles.AnyAsync(p => p.Auth0UserId == userId, cancellationToken);
             if (!alreadyExists)
             {
                 throw;
@@ -83,7 +82,7 @@ public class ProfileService : IProfileService
 
         var response = new ProfileResponse
         {
-            Id = profile.Id,
+            Id = profile.Auth0UserId,
             DisplayName = profile.DisplayName,
             Email = profile.Email,
             CreatedAt = profile.CreatedAt,
@@ -97,7 +96,7 @@ public class ProfileService : IProfileService
     {
         var profile = await _context.Profiles
             .AsNoTracking()
-            .FirstOrDefaultAsync(p => p.Id == userId, cancellationToken);
+            .FirstOrDefaultAsync(p => p.Auth0UserId == userId, cancellationToken);
 
         if (profile == null)
         {
@@ -106,7 +105,7 @@ public class ProfileService : IProfileService
 
         return new ProfileResponse
         {
-            Id = profile.Id,
+            Id = profile.Auth0UserId,
             DisplayName = profile.DisplayName,
             Email = profile.Email,
             CreatedAt = profile.CreatedAt,
@@ -118,7 +117,7 @@ public class ProfileService : IProfileService
     {
         var profile = await _context.Profiles
             .AsNoTracking()
-            .FirstOrDefaultAsync(p => p.Id == userId, cancellationToken);
+            .FirstOrDefaultAsync(p => p.Auth0UserId == userId, cancellationToken);
 
         if (profile == null)
         {
@@ -137,7 +136,7 @@ public class ProfileService : IProfileService
     {
         var profile = await _context.Profiles
             .AsNoTracking()
-            .FirstOrDefaultAsync(p => p.Id == userId, cancellationToken);
+            .FirstOrDefaultAsync(p => p.Auth0UserId == userId, cancellationToken);
 
         if (profile == null)
         {
