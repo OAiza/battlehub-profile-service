@@ -1,0 +1,9 @@
+<Project>
+
+  <!-- Configuración común a todos los proyectos de la solución (API y pruebas). -->
+  <PropertyGroup>
+    <!-- R-07: cualquier advertencia del compilador hace fallar la compilación. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+</Project>

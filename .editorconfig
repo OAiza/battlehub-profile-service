@@ -1,0 +1,52 @@
+# Convenciones de código del Profile Service.
+# El CI las verifica con: dotnet format --verify-no-changes (R-08).
+root = true
+
+[*]
+charset = utf-8
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{json,yml,yaml,xml,csproj,props,slnx}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.cs]
+# Organización de los using
+dotnet_sort_system_directives_first = true
+dotnet_separate_import_directive_groups = false
+
+# Llaves y saltos de línea
+csharp_new_line_before_open_brace = all
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+csharp_prefer_braces = true:warning
+
+# Espacios de nombres por archivo, como en todo el proyecto
+csharp_style_namespace_declarations = file_scoped:warning
+
+# Calificación con this. y tipos predefinidos
+dotnet_style_qualification_for_field = false:warning
+dotnet_style_qualification_for_property = false:warning
+dotnet_style_qualification_for_method = false:warning
+dotnet_style_qualification_for_event = false:warning
+dotnet_style_predefined_type_for_locals_parameters_members = true:warning
+dotnet_style_predefined_type_for_member_access = true:warning
+
+# Modificadores de acceso explícitos
+dotnet_style_require_accessibility_modifiers = for_non_interface_members:warning
+
+# using sin uso
+dotnet_diagnostic.IDE0005.severity = warning
+
+# Las migraciones las genera EF Core: no se reformatean a mano.
+[**/Migrations/*.cs]
+generated_code = true
+charset = unset
+dotnet_diagnostic.IDE0005.severity = none
+dotnet_diagnostic.IDE0161.severity = none
